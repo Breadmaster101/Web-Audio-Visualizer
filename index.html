@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>E-Money Audio Visualizer</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
+
+        :root {
+            --bg: #000000;
+            --fg: #ffffff;
+            --border: #ffffff;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: var(--bg);
+            font-family: 'Space Mono', monospace;
+            color: var(--fg);
+            user-select: none;
+            cursor: default;
+        }
+
+        #canvas-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        .ui-layer {
+            transition: opacity 0.3s ease;
+        }
+
+        body.ui-idle {
+            cursor: none;
+        }
+
+        body.ui-idle .ui-layer {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        #start-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: var(--bg);
+            transition: opacity 0.5s ease;
+        }
+
+        #start-overlay.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        h1 {
+            font-weight: 400;
+            letter-spacing: -2px;
+            font-size: 24px;
+            margin-bottom: 30px;
+            text-transform: uppercase;
+        }
+
+        button {
+            background: transparent;
+            color: var(--fg);
+            border: 1px solid var(--fg);
+            padding: 15px 30px;
+            font-family: inherit;
+            font-size: 11px;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        button:hover {
+            background: var(--fg);
+            color: var(--bg);
+        }
+
+        #controls-box {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            width: 200px;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            padding: 20px;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .control-row {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .control-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #888;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: transparent;
+        }
+
+        input[type=range]:focus {
+            outline: none;
+        }
+
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 1px;
+            cursor: pointer;
+            background: #333;
+        }
+
+        input[type=range]::-webkit-slider-thumb {
+            height: 10px;
+            width: 10px;
+            background: var(--fg);
+            cursor: pointer;
+            -webkit-appearance: none;
+            margin-top: -5px; 
+            border-radius: 0;
+        }
+
+        input[type=range]:hover::-webkit-slider-thumb {
+            transform: scale(1.2);
+        }
+
+        .box-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #333;
+            padding-bottom: 10px;
+            margin-bottom: 5px;
+        }
+
+        .box-title {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        #fullscreen-btn {
+            border: none;
+            padding: 5px;
+            width: auto;
+            height: auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--fg);
+        }
+        
+        #fullscreen-btn:hover {
+            background: transparent;
+            color: #888;
+        }
+
+        #fullscreen-btn svg {
+            width: 14px;
+            height: 14px;
+            fill: currentColor;
+        }
+
+    </style>
+    
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+
+    <div id="start-overlay">
+        <h1>E-Money Audio Visualizer</h1>
+        <button id="start-btn">Initialize</button>
+        <p style="margin-top: 20px; font-size: 10px; color: #666;">SELECT SCREEN & CHECK "SHARE AUDIO"</p>
+    </div>
+
+    <div id="controls-box" class="ui-layer">
+        <div class="box-header">
+            <span class="box-title">Controls</span>
+            <button id="fullscreen-btn" title="Fullscreen">
+                <svg viewBox="0 0 24 24">
+                    <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
+                </svg>
+            </button>
+        </div>
+
+        <div class="control-row">
+            <span class="control-label">Particles <span id="val-particles">250000</span></span>
+            <input type="range" id="inp-particles" min="10000" max="1000000" step="10000" value="250000">
+        </div>
+        <div class="control-row">
+            <span class="control-label">Brightness <span id="val-brightness">0.8</span></span>
+            <input type="range" id="inp-brightness" min="0.1" max="5.0" step="0.1" value="0.8">
+        </div>
+        <div class="control-row">
+            <span class="control-label">Sensitivity <span id="val-sensitivity">1.0</span></span>
+            <input type="range" id="inp-sensitivity" min="0.1" max="5.0" step="0.1" value="1.0">
+        </div>
+    </div>
+
+    <div id="canvas-container"></div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        const CONFIG = {
+            maxParticles: 1000000,
+            initialParticles: 250000,
+            particleSize: 0.08,
+            bloomStrength: 1.8,
+            bloomRadius: 0.5,
+            bloomThreshold: 0.1,
+            sensitivity: 1.0,
+            brightness: 0.8
+        };
+
+        class UIManager {
+            constructor() {
+                this.idleTimer = null;
+                this.idleDelay = 2000;
+                this.body = document.body;
+                
+                this.setupIdleDetection();
+                this.setupFullscreen();
+            }
+
+            setupIdleDetection() {
+                const resetIdle = () => {
+                    this.body.classList.remove('ui-idle');
+                    clearTimeout(this.idleTimer);
+                    this.idleTimer = setTimeout(() => {
+                        if(document.getElementById('start-overlay').classList.contains('hidden')) {
+                            this.body.classList.add('ui-idle');
+                        }
+                    }, this.idleDelay);
+                };
+
+                window.addEventListener('mousemove', resetIdle);
+                window.addEventListener('click', resetIdle);
+                window.addEventListener('touchstart', resetIdle);
+                resetIdle();
+            }
+
+            setupFullscreen() {
+                document.getElementById('fullscreen-btn').addEventListener('click', () => {
+                    if (!document.fullscreenElement) {
+                        document.documentElement.requestFullscreen();
+                    } else {
+                        if (document.exitFullscreen) document.exitFullscreen();
+                    }
+                });
+            }
+        }
+        
+        const vertexShader = `
+            uniform float uTime;
+            uniform float uBass;
+            uniform float uMid;
+            uniform float uTreble;
+            attribute float aSize;
+            varying vec3 vColor;
+            
+            vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+            vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+            vec4 permute(vec4 x) { return mod289(((x*34.0)+1.0)*x); }
+            vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
+
+            float snoise(vec3 v) {
+                const vec2 C = vec2(1.0/6.0, 1.0/3.0);
+                const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+                vec3 i  = floor(v + dot(v, C.yyy) );
+                vec3 x0 = v - i + dot(i, C.xxx) ;
+                vec3 g = step(x0.yzx, x0.xyz);
+                vec3 l = 1.0 - g;
+                vec3 i1 = min( g.xyz, l.zxy );
+                vec3 i2 = max( g.xyz, l.zxy );
+                vec3 x1 = x0 - i1 + C.xxx;
+                vec3 x2 = x0 - i2 + C.yyy;
+                vec3 x3 = x0 - D.yyy;
+                i = mod289(i);
+                vec4 p = permute( permute( permute(
+                        i.z + vec4(0.0, i1.z, i2.z, 1.0 ))
+                        + i.y + vec4(0.0, i1.y, i2.y, 1.0 ))
+                        + i.x + vec4(0.0, i1.x, i2.x, 1.0 ));
+                float n_ = 0.142857142857;
+                vec3  ns = n_ * D.wyz - D.xzx;
+                vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
+                vec4 x_ = floor(j * ns.z);
+                vec4 y_ = floor(j - 7.0 * x_ );
+                vec4 x = x_ *ns.x + ns.yyyy;
+                vec4 y = y_ *ns.x + ns.yyyy;
+                vec4 h = 1.0 - abs(x) - abs(y);
+                vec4 b0 = vec4( x.xy, y.xy );
+                vec4 b1 = vec4( x.zw, y.zw );
+                vec4 s0 = floor(b0)*2.0 + 1.0;
+                vec4 s1 = floor(b1)*2.0 + 1.0;
+                vec4 sh = -step(h, vec4(0.0));
+                vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy ;
+                vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww ;
+                vec3 p0 = vec3(a0.xy,h.x);
+                vec3 p1 = vec3(a0.zw,h.y);
+                vec3 p2 = vec3(a1.xy,h.z);
+                vec3 p3 = vec3(a1.zw,h.w);
+                vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2, p2), dot(p3,p3)));
+                p0 *= norm.x;
+                p1 *= norm.y;
+                p2 *= norm.z;
+                p3 *= norm.w;
+                vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
+                m = m * m;
+                return 42.0 * dot( m*m, vec4( dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3) ) );
+            }
+
+            void main() {
+                vec3 pos = position;
+                float noise = snoise(vec3(pos.x * 1.5 + uTime * 0.2, pos.y * 1.5 + uTime * 0.3, pos.z * 1.5));
+                
+                vec3 expansion = normalize(pos) * (uBass * 3.0);
+                vec3 turbulence = vec3(
+                    snoise(vec3(pos.x + uTime, pos.y, pos.z)),
+                    snoise(vec3(pos.x, pos.y + uTime, pos.z)),
+                    snoise(vec3(pos.x, pos.y, pos.z + uTime))
+                ) * uMid * 2.0;
+                vec3 spikes = normal * (noise * uTreble * 4.0);
+                
+                vec3 newPos = pos + expansion + turbulence + spikes;
+
+                float angle = uTime * 0.1;
+                mat3 rot = mat3(
+                    cos(angle), 0.0, sin(angle),
+                    0.0, 1.0, 0.0,
+                    -sin(angle), 0.0, cos(angle)
+                );
+                newPos = rot * newPos;
+
+                vec4 mvPosition = modelViewMatrix * vec4(newPos, 1.0);
+                gl_Position = projectionMatrix * mvPosition;
+                gl_PointSize = (aSize * (1.0 + uTreble * 3.0)) * (100.0 / -mvPosition.z);
+                
+                float dist = length(newPos);
+                vec3 c1 = vec3(1.0, 0.0, 0.3);
+                vec3 c2 = vec3(0.0, 1.0, 1.0);
+                vec3 c3 = vec3(0.5, 0.0, 1.0);
+                
+                vColor = mix(c2, c1, uBass);
+                vColor = mix(vColor, c3, uMid);
+            }
+        `;
+
+        const fragmentShader = `
+            uniform float uBrightness;
+            varying vec3 vColor;
+            
+            void main() {
+                vec2 coord = gl_PointCoord - vec2(0.5);
+                float dist = length(coord);
+                if (dist > 0.5) discard;
+                gl_FragColor = vec4(vColor, uBrightness);
+            }
+        `;
+
+        class AudioVisualizer {
+            constructor() {
+                this.container = document.getElementById('canvas-container');
+                this.initThree();
+                this.initAudio();
+                this.setupControls();
+                this.render();
+            }
+
+            initThree() {
+                this.scene = new THREE.Scene();
+                this.scene.fog = new THREE.FogExp2(0x000000, 0.02);
+                this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
+                this.camera.position.z = 8;
+                this.camera.position.y = 2;
+
+                this.renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false });
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                this.renderer.setPixelRatio(window.devicePixelRatio);
+                this.container.appendChild(this.renderer.domElement);
+
+                this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+                this.controls.enableDamping = true;
+                this.controls.autoRotate = true;
+                this.controls.autoRotateSpeed = 0.5;
+
+                this.createParticles();
+                
+                this.composer = new EffectComposer(this.renderer);
+                this.composer.addPass(new RenderPass(this.scene, this.camera));
+                this.composer.addPass(new UnrealBloomPass(
+                    new THREE.Vector2(window.innerWidth, window.innerHeight),
+                    CONFIG.bloomStrength, CONFIG.bloomRadius, CONFIG.bloomThreshold
+                ));
+                this.clock = new THREE.Clock();
+
+                window.addEventListener('resize', () => {
+                    this.camera.aspect = window.innerWidth / window.innerHeight;
+                    this.camera.updateProjectionMatrix();
+                    this.renderer.setSize(window.innerWidth, window.innerHeight);
+                    this.composer.setSize(window.innerWidth, window.innerHeight);
+                });
+            }
+
+            createParticles() {
+                const geometry = new THREE.BufferGeometry();
+                const positions = [];
+                const sizes = [];
+                const r = 4;
+
+                for (let i = 0; i < CONFIG.maxParticles; i++) {
+                    const theta = Math.random() * Math.PI * 2;
+                    const phi = Math.acos((Math.random() * 2) - 1);
+                    positions.push(
+                        r * Math.sin(phi) * Math.cos(theta),
+                        r * Math.sin(phi) * Math.sin(theta),
+                        r * Math.cos(phi)
+                    );
+                    sizes.push(Math.random() * CONFIG.particleSize);
+                }
+
+                geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+                geometry.setAttribute('aSize', new THREE.Float32BufferAttribute(sizes, 1));
+                geometry.setDrawRange(0, CONFIG.initialParticles);
+
+                this.material = new THREE.ShaderMaterial({
+                    uniforms: {
+                        uTime: { value: 0 },
+                        uBass: { value: 0 },
+                        uMid: { value: 0 },
+                        uTreble: { value: 0 },
+                        uBrightness: { value: CONFIG.brightness }
+                    },
+                    vertexShader: vertexShader,
+                    fragmentShader: fragmentShader,
+                    transparent: true,
+                    depthWrite: false,
+                    blending: THREE.AdditiveBlending
+                });
+
+                this.particles = new THREE.Points(geometry, this.material);
+                this.particles.frustumCulled = false;
+                this.scene.add(this.particles);
+            }
+
+            initAudio() {
+                this.audioContext = null;
+                this.analyser = null;
+                this.dataArray = null;
+                this.isAudioReady = false;
+            }
+
+            async startAudioCapture() {
+                try {
+                    const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+                    if (stream.getAudioTracks().length === 0) {
+                        alert("No audio track found. Please retry and check 'Share System Audio'.");
+                        return;
+                    }
+
+                    this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    this.analyser = this.audioContext.createAnalyser();
+                    this.analyser.fftSize = 512;
+                    const source = this.audioContext.createMediaStreamSource(stream);
+                    source.connect(this.analyser);
+                    this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+                    
+                    this.isAudioReady = true;
+                    document.getElementById('start-overlay').classList.add('hidden');
+                    stream.getVideoTracks()[0].stop();
+                } catch (err) {
+                    console.error(err);
+                    alert("Audio capture failed. Check permissions.");
+                }
+            }
+
+            setupControls() {
+                const linkControl = (id, prop, callback) => {
+                    const slider = document.getElementById(id);
+                    const valDisplay = document.getElementById(id.replace('inp', 'val'));
+
+                    slider.addEventListener('input', (e) => {
+                        const val = parseFloat(e.target.value);
+                        if(prop) CONFIG[prop] = val;
+                        if(valDisplay) valDisplay.textContent = val;
+                        if(callback) callback(val);
+                    });
+                };
+
+                linkControl('inp-particles', null, (val) => {
+                    this.particles.geometry.setDrawRange(0, val);
+                });
+                linkControl('inp-brightness', 'brightness', (val) => {
+                    this.material.uniforms.uBrightness.value = val;
+                });
+                linkControl('inp-sensitivity', 'sensitivity');
+            }
+
+            getFreq(data, min, max) {
+                let sum = 0;
+                for (let i = min; i < max; i++) sum += data[i];
+                return sum / (max - min);
+            }
+
+            render() {
+                requestAnimationFrame(() => this.render());
+                const time = this.clock.getElapsedTime();
+                
+                let bass = 0, mid = 0, treble = 0;
+                if (this.isAudioReady) {
+                    this.analyser.getByteFrequencyData(this.dataArray);
+                    bass = Math.min((this.getFreq(this.dataArray, 0, 10) / 255) * CONFIG.sensitivity, 1.0);
+                    mid = Math.min((this.getFreq(this.dataArray, 10, 80) / 255) * CONFIG.sensitivity, 1.0);
+                    treble = Math.min((this.getFreq(this.dataArray, 80, 200) / 255) * CONFIG.sensitivity, 1.0);
+                }
+
+                if (this.material) {
+                    this.material.uniforms.uTime.value = time;
+                    this.material.uniforms.uBass.value = THREE.MathUtils.lerp(this.material.uniforms.uBass.value, bass, 0.2);
+                    this.material.uniforms.uMid.value = THREE.MathUtils.lerp(this.material.uniforms.uMid.value, mid, 0.1);
+                    this.material.uniforms.uTreble.value = THREE.MathUtils.lerp(this.material.uniforms.uTreble.value, treble, 0.1);
+                }
+
+                const shake = bass * 0.1;
+                this.camera.position.x += (Math.random() - 0.5) * shake;
+                this.camera.position.y += (Math.random() - 0.5) * shake;
+                
+                this.controls.update();
+                this.composer.render();
+            }
+        }
+
+        new UIManager();
+        const app = new AudioVisualizer();
+        document.getElementById('start-btn').addEventListener('click', () => app.startAudioCapture());
+
+    </script>
+</body>
+</html>
