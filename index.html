@@ -74,6 +74,11 @@
             text-transform: uppercase;
         }
 
+        .btn-group {
+            display: flex;
+            gap: 15px;
+        }
+
         button {
             background: transparent;
             color: var(--fg);
@@ -203,8 +208,14 @@
 
     <div id="start-overlay">
         <h1>E-Money Audio Visualizer</h1>
-        <button id="start-btn">Initialize</button>
-        <p style="margin-top: 20px; font-size: 10px; color: #666;">SELECT SCREEN & CHECK "SHARE AUDIO"</p>
+        <div class="btn-group">
+            <button id="start-system-btn">System Audio</button>
+            <button id="start-mic-btn">Microphone</button>
+        </div>
+        <p style="margin-top: 20px; font-size: 10px; color: #666; text-align: center; line-height: 1.6;">
+            SYSTEM: SELECT SCREEN & CHECK "SHARE AUDIO"<br>
+            MIC: ALLOW BROWSER PERMISSIONS
+        </p>
     </div>
 
     <div id="controls-box" class="ui-layer">
@@ -488,27 +499,40 @@
                 this.isAudioReady = false;
             }
 
-            async startAudioCapture() {
+            setupAudioContext(stream) {
+                this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                this.analyser = this.audioContext.createAnalyser();
+                this.analyser.fftSize = 512;
+                const source = this.audioContext.createMediaStreamSource(stream);
+                source.connect(this.analyser);
+                this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+                
+                this.isAudioReady = true;
+                document.getElementById('start-overlay').classList.add('hidden');
+            }
+
+            async startSystemAudio() {
                 try {
                     const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
                     if (stream.getAudioTracks().length === 0) {
                         alert("No audio track found. Please retry and check 'Share System Audio'.");
                         return;
                     }
-
-                    this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                    this.analyser = this.audioContext.createAnalyser();
-                    this.analyser.fftSize = 512;
-                    const source = this.audioContext.createMediaStreamSource(stream);
-                    source.connect(this.analyser);
-                    this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
-                    
-                    this.isAudioReady = true;
-                    document.getElementById('start-overlay').classList.add('hidden');
+                    this.setupAudioContext(stream);
                     stream.getVideoTracks()[0].stop();
                 } catch (err) {
                     console.error(err);
-                    alert("Audio capture failed. Check permissions.");
+                    alert("System audio capture failed.");
+                }
+            }
+
+            async startMicAudio() {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    this.setupAudioContext(stream);
+                } catch (err) {
+                    console.error(err);
+                    alert("Microphone access failed. Please check permissions.");
                 }
             }
 
@@ -570,7 +594,9 @@
 
         new UIManager();
         const app = new AudioVisualizer();
-        document.getElementById('start-btn').addEventListener('click', () => app.startAudioCapture());
+        
+        document.getElementById('start-system-btn').addEventListener('click', () => app.startSystemAudio());
+        document.getElementById('start-mic-btn').addEventListener('click', () => app.startMicAudio());
 
     </script>
 </body>
