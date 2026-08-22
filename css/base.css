@@ -1,0 +1,67 @@
+:root {
+    --bg: #000000;
+    --fg: #ffffff;
+    --border: #ffffff;
+    --muted: #888;
+    --dim: #666;
+    --rule: #333;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background-color: var(--bg);
+    font-family: 'Space Mono', monospace;
+    color: var(--fg);
+    user-select: none;
+    cursor: default;
+}
+
+#canvas-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+}
+
+h1 {
+    font-weight: 400;
+    letter-spacing: -2px;
+    font-size: 24px;
+    margin-bottom: 30px;
+    text-transform: uppercase;
+}
+
+button {
+    background: transparent;
+    color: var(--fg);
+    border: 1px solid var(--fg);
+    padding: 15px 30px;
+    font-family: inherit;
+    font-size: 11px;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+button:hover {
+    background: var(--fg);
+    color: var(--bg);
+}
+
+/* Chrome-hiding: UI fades out while the pointer sits still. */
+.ui-layer {
+    transition: opacity 0.3s ease;
+}
+
+body.ui-idle {
+    cursor: none;
+}
+
+body.ui-idle .ui-layer {
+    opacity: 0;
+    pointer-events: none;
+}
