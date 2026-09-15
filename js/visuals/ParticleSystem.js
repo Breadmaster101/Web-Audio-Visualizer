@@ -1,19 +1,23 @@
 import * as THREE from 'three';
 import { CONFIG } from '../config.js';
+import { VisualMode } from './VisualMode.js';
 import { particlesVertexShader } from '../shaders/particles.vert.js';
 import { particlesFragmentShader } from '../shaders/particles.frag.js';
 
 /**
- * A sphere of points. The full `maxParticles` buffer is allocated once at
- * startup; the particle-count slider only moves the draw range, so changing it
- * costs nothing at runtime.
+ * Sphere mode: a sphere of points displaced by audio-driven fields.
+ *
+ * The full `maxParticles` buffer is allocated once when the mode is built; the
+ * particle-count slider only moves the draw range, so changing it costs nothing
+ * at runtime.
  */
-export class ParticleSystem {
-    constructor(scene) {
+export class ParticleSystem extends VisualMode {
+    constructor(stage) {
+        super(stage);
         this.material = this.createMaterial();
         this.points = new THREE.Points(this.createGeometry(), this.material);
         this.points.frustumCulled = false;
-        scene.add(this.points);
+        this.add(this.points);
     }
 
     createGeometry() {
@@ -48,6 +52,8 @@ export class ParticleSystem {
                 uMid: { value: 0 },
                 uTreble: { value: 0 },
                 uBeat: { value: 0 },
+                uPulse: { value: 0 },
+                uTilt: { value: 0.5 },
                 uBrightness: { value: CONFIG.brightness }
             },
             vertexShader: particlesVertexShader,
@@ -70,12 +76,14 @@ export class ParticleSystem {
         this.material.uniforms.uTime.value = time;
     }
 
-    /** Push the analysed audio bands into the shader. */
-    setAudio({ bass, mid, treble, beat }) {
+    /** Push the analysed audio metrics into the shader. */
+    setAudio({ bass, mid, treble, beat, pulse, tilt }) {
         const u = this.material.uniforms;
         u.uBass.value = bass;
         u.uMid.value = mid;
         u.uTreble.value = treble;
         u.uBeat.value = beat;
+        u.uPulse.value = pulse;
+        u.uTilt.value = tilt;
     }
 }

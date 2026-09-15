@@ -11,7 +11,7 @@
 
     <link rel="stylesheet" href="css/base.css">
     <link rel="stylesheet" href="css/overlay.css">
-    <link rel="stylesheet" href="css/controls.css">
+    <link rel="stylesheet" href="css/hud.css">
 
     <script type="importmap">
         {
@@ -24,6 +24,8 @@
 </head>
 <body>
 
+    <div id="canvas-container"></div>
+
     <div id="start-overlay">
         <h1>E-Money Audio Visualizer</h1>
         <div class="btn-group">
@@ -33,35 +35,581 @@
         <p class="overlay-hint">
             SYSTEM: SELECT SCREEN &amp; CHECK "SHARE AUDIO"<br>
             MICROPHONE: ALLOW BROWSER PERMISSIONS<br>
-            USE MOUSE TO MOVE AROUND THE VISUALIZER
+            DRAG TO ORBIT &middot; SCROLL TO ZOOM &middot; PRESS ? FOR HELP
         </p>
     </div>
 
-    <div id="controls-box" class="ui-layer">
-        <div class="box-header">
-            <span class="box-title">Controls</span>
-            <button id="fullscreen-btn" title="Fullscreen">
-                <svg viewBox="0 0 24 24">
+    <!-- ============================ CONTROL COLUMN ========================= -->
+    <div id="hud-controls" class="ui-layer hud-panel">
+
+        <div class="hud-head">
+            <span class="hud-title">Controls</span>
+            <span class="hud-keys">H&nbsp;hide</span>
+        </div>
+
+        <div class="ctl" id="ctl-mode">
+            <div class="ctl-head">
+                <span class="ctl-label">Visualiser</span>
+                <span class="hud-keys">1&ndash;3 &middot; V</span>
+            </div>
+            <!-- Filled in by ControlPanel from the registry in visuals/modes.js. -->
+            <div class="mode-list" id="mode-list" role="radiogroup" aria-label="Visualiser"></div>
+            <p class="ctl-desc">
+                Three different ways of drawing the same analysis. They react to
+                different things &mdash; <b>Sphere</b> to the spectrum right now,
+                <b>Terrain</b> to the spectrum over the last few seconds, and
+                <b>Membrane</b> to individual hits. The controls below change to
+                match whichever is on screen.
+            </p>
+        </div>
+
+        <div class="hud-rule"></div>
+
+        <div class="ctl">
+            <div class="ctl-head">
+                <span class="ctl-label">Source</span>
+                <span class="seg">
+                    <button id="btn-src-system" class="seg-btn" aria-pressed="false">System</button>
+                    <button id="btn-src-mic" class="seg-btn" aria-pressed="false">Mic</button>
+                </span>
+            </div>
+            <p class="ctl-desc">
+                Which audio the visualiser listens to. <b>System</b> picks up
+                whatever your computer is playing; <b>Mic</b> picks up the room.
+                Switching asks for permission again.
+            </p>
+        </div>
+
+        <div class="hud-rule"></div>
+
+        <!-- ---------------------------- RENDER ---------------------------- -->
+        <div class="hud-group">Render</div>
+
+        <div class="ctl" id="ctl-particles">
+            <div class="ctl-head">
+                <label class="ctl-label" for="inp-particles">Particles</label>
+                <span class="ctl-value" id="val-particles">250,000</span>
+            </div>
+            <input type="range" id="inp-particles" min="10000" max="1000000" step="10000" value="250000">
+            <p class="ctl-desc">
+                How many points make up the sphere. More looks denser and
+                smoother, fewer runs faster. If the frame rate drops, turn this
+                down first &mdash; it is the setting that costs the most.
+            </p>
+        </div>
+
+        <div class="ctl" id="ctl-brightness">
+            <div class="ctl-head">
+                <label class="ctl-label" for="inp-brightness">Brightness</label>
+                <span class="ctl-value" id="val-brightness">0.80</span>
+            </div>
+            <input type="range" id="inp-brightness" min="0.1" max="5.0" step="0.1" value="0.8">
+            <p class="ctl-desc">
+                How bright each point is. Turning it up also feeds the glow, so
+                the picture gets brighter faster than the number suggests.
+            </p>
+        </div>
+
+        <div class="ctl" id="ctl-bloom">
+            <div class="ctl-head">
+                <label class="ctl-label" for="inp-bloom">Bloom</label>
+                <span class="ctl-value" id="val-bloom">1.80</span>
+            </div>
+            <input type="range" id="inp-bloom" min="0.00" max="4.00" step="0.05" value="1.80">
+            <p class="ctl-desc">
+                How much the points glow and bleed into each other. At <b>0</b> you
+                see the bare dots. Turned up, they merge into one soft mass of
+                light &mdash; past about 2.5 the middle blows out to solid white.
+            </p>
+        </div>
+
+        <div class="hud-rule"></div>
+
+        <!-- --------------------------- REACTIVITY -------------------------- -->
+        <div class="hud-group">Reactivity</div>
+
+        <div class="ctl" id="ctl-sensitivity">
+            <div class="ctl-head">
+                <label class="ctl-label" for="inp-sensitivity">Sensitivity</label>
+                <span class="ctl-head-right">
+                    <button id="btn-auto-sensitivity" class="toggle" aria-pressed="true">Auto</button>
+                    <span class="ctl-value" id="val-sensitivity">1.00</span>
+                </span>
+            </div>
+            <input type="range" id="inp-sensitivity" min="0.10" max="2.20" step="0.01" value="1.00" disabled>
+            <p class="ctl-desc">
+                How hard the visuals react to the music. With <b>Auto</b> on the
+                app sets this for you and keeps adjusting as the music changes;
+                the slider just shows you where it has got to. Turn Auto off to
+                set it by hand &mdash; it starts from wherever Auto left it.
+            </p>
+        </div>
+
+        <div class="ctl" id="ctl-trim">
+            <div class="ctl-head">
+                <label class="ctl-label" for="inp-trim">Trim</label>
+                <span class="ctl-value" id="val-trim">1.00</span>
+            </div>
+            <input type="range" id="inp-trim" min="0.30" max="2.50" step="0.05" value="1.00">
+            <p class="ctl-desc">
+                Makes everything more or less extreme, on top of whatever Auto
+                settles on. Auto will not quietly cancel this out the way it would
+                if you just turned Sensitivity up, so this is the one to reach for
+                when the whole thing feels too tame or too wild.
+            </p>
+        </div>
+
+        <div class="ctl" id="ctl-dynamics">
+            <div class="ctl-head">
+                <label class="ctl-label" for="inp-dynamics">Dynamics</label>
+                <span class="ctl-value" id="val-dynamics">0.60</span>
+            </div>
+            <input type="range" id="inp-dynamics" min="0.00" max="1.00" step="0.05" value="0.60">
+            <p class="ctl-desc">
+                How much the loud and quiet parts of a song stay different. At
+                <b>0</b> everything reacts about the same amount, so a quiet verse
+                looks much like the chorus. At <b>1</b> the quiet parts stay calm
+                and the loud parts really land.
+            </p>
+        </div>
+
+        <div class="hud-rule"></div>
+
+        <!-- ---------------------------- CAMERA ---------------------------- -->
+        <div class="hud-group">Camera</div>
+
+        <div class="ctl" id="ctl-shake">
+            <div class="ctl-head">
+                <label class="ctl-label" for="inp-shake">Shake</label>
+                <span class="ctl-value" id="val-shake">1.00</span>
+            </div>
+            <input type="range" id="inp-shake" min="0.00" max="2.00" step="0.05" value="1.00">
+            <p class="ctl-desc">
+                How much the camera jolts on each beat. At <b>0</b> it holds
+                perfectly still. It always shakes around wherever you have dragged
+                the view to, so it never pulls the camera away from you.
+            </p>
+        </div>
+
+        <div class="ctl" id="ctl-rotate">
+            <div class="ctl-head">
+                <label class="ctl-label" for="inp-rotate">Auto-rotate</label>
+                <span class="ctl-head-right">
+                    <button id="btn-auto-rotate" class="toggle" aria-pressed="true">On</button>
+                    <span class="ctl-value" id="val-rotate">0.50</span>
+                </span>
+            </div>
+            <input type="range" id="inp-rotate" min="0.05" max="4.00" step="0.05" value="0.50">
+            <p class="ctl-desc">
+                Slowly spins the view around the sphere. Turn it off to keep an
+                angle you have picked. Dragging always takes over while you hold.
+            </p>
+        </div>
+
+        <div class="hud-rule" id="rule-mode"></div>
+
+        <!-- ------------------------ THIS VISUALISER ----------------------- -->
+        <div class="hud-group" id="grp-mode">This visualiser</div>
+
+        <div class="ctl" id="ctl-speed">
+            <div class="ctl-head">
+                <label class="ctl-label" for="inp-speed">Speed</label>
+                <span class="ctl-value" id="val-speed">1.00</span>
+            </div>
+            <input type="range" id="inp-speed" min="0.25" max="2.50" step="0.05" value="1.00">
+            <p class="ctl-desc">
+                How fast <b>Terrain</b> scrolls, and so how much history fits on
+                screen &mdash; slower keeps more of the song in view at once. The
+                scroll is locked to the detected beat, so this is a multiplier on
+                top of that tempo rather than a speed of its own.
+            </p>
+        </div>
+
+        <div class="ctl" id="ctl-damping">
+            <div class="ctl-head">
+                <label class="ctl-label" for="inp-damping">Ring</label>
+                <span class="ctl-value" id="val-damping">0.50</span>
+            </div>
+            <input type="range" id="inp-damping" min="0.00" max="1.00" step="0.05" value="0.50">
+            <p class="ctl-desc">
+                How long the membrane keeps moving after a hit. Low is a dead
+                thud that clears between beats; high rings for seconds, so
+                ripples from different hits overlap and interfere. Noisy material
+                is always damped harder than tonal material, on top of this.
+            </p>
+        </div>
+
+        <div class="hud-rule"></div>
+
+        <!-- ------------------------- HOW IT WORKS ------------------------- -->
+        <section id="how-it-works" class="doc">
+            <button id="btn-how" class="doc-toggle" aria-expanded="false" aria-controls="doc-body">
+                <span class="doc-caret" aria-hidden="true">&rsaquo;</span> How it works
+            </button>
+
+            <div id="doc-body" class="doc-body" hidden>
+
+                <h3>What you are looking at</h3>
+                <p>
+                    One analysis engine, three ways of drawing it. All three receive
+                    exactly the same values from the same chain, described further
+                    down; they differ in <i>which</i> of those values they are built
+                    on, and that is why they do not look like variations of each other.
+                </p>
+
+                <dl class="doc-map">
+                    <dt>Sphere &mdash; the spectrum, now</dt>
+                    <dd>
+                        A quarter of a million points scattered evenly over a sphere of
+                        radius 4. Nothing about the sphere is animated directly: every
+                        frame each point is displaced from its resting position by
+                        several audio-driven fields, and what you read as ripples,
+                        spikes and swelling is the sum of them. It has no memory &mdash;
+                        every frame is drawn from that frame's audio alone.
+                    </dd>
+
+                    <dt>Terrain &mdash; the spectrum, over time</dt>
+                    <dd>
+                        The same spectrum at far finer resolution, with <b>time</b> as a
+                        second spatial axis. Frequency runs left to right, low to high;
+                        the near edge is now and the horizon is about six seconds ago.
+                        A drop is a cliff, a breakdown a valley, a hi-hat pattern a field
+                        of ridges. It is the only mode here that shows you where the
+                        music has been rather than where it is.
+                    </dd>
+
+                    <dt>Membrane &mdash; the hits</dt>
+                    <dd>
+                        A circular drumhead with a wave equation running on it, struck by
+                        every detected onset. Because the simulation carries its state
+                        from frame to frame, this is the only mode that can show
+                        interference: two hits landing close together genuinely add, the
+                        rim genuinely reflects, and a lightly damped passage builds up
+                        standing waves. Where a strike lands is set by the spectral
+                        centroid, following a real drumhead's modes &mdash; low content
+                        near the centre, bright content out toward the rim.
+                    </dd>
+                </dl>
+
+                <h3>Sphere: what drives each visual axis</h3>
+                <dl class="doc-map">
+                    <dt>Radial expansion &mdash; the swell</dt>
+                    <dd>
+                        <b>Bass</b> pushes every point outward along its own radius, by
+                        up to 3.0 units at full scale. This is the dominant motion and
+                        what sets the overall size of the cloud.
+                    </dd>
+
+                    <dt>Radial kick &mdash; the ripple height</dt>
+                    <dd>
+                        The <b>onset envelope</b> adds up to another 0.5 units of
+                        outward push, decaying in musical time rather than fixed
+                        seconds &mdash; it falls over roughly a third of a beat, so
+                        hits stay separate at 170 BPM and breathe at 70. This is the
+                        term you perceive as a ripple travelling outward on each hit.
+                    </dd>
+
+                    <dt>Radial breath &mdash; the idle pulse</dt>
+                    <dd>
+                        The <b>beat grid</b> adds a further 0.35 units, phase-locked to
+                        the detected tempo and scaled by how confident the tracker is.
+                        Its job is to keep the cloud moving in time through sustained
+                        passages that contain no transients at all.
+                    </dd>
+
+                    <dt>Turbulence &mdash; the churn</dt>
+                    <dd>
+                        <b>Mid</b> offsets each point by 3D simplex noise sampled
+                        independently per axis, up to 2.0 units. Because the noise field
+                        itself scrolls with time, this reads as the surface boiling
+                        rather than as a shape.
+                    </dd>
+
+                    <dt>Spikes &mdash; the needles</dt>
+                    <dd>
+                        <b>Treble</b> displaces along each point's surface normal by
+                        noise &times; 4.0 &mdash; the largest coefficient in the shader.
+                        Because it follows the normal and the noise is signed, it pulls
+                        some regions inward while it throws others out, which is what
+                        makes it look spiky rather than merely bigger.
+                    </dd>
+
+                    <dt>Point size</dt>
+                    <dd>
+                        Each point's base size is multiplied by 1 + treble&times;3 +
+                        beat&times;2 + pulse&times;0.8, then scaled by inverse depth.
+                        Size is deliberately driven by the fast terms, so hits flash
+                        rather than swell.
+                    </dd>
+
+                    <dt>Colour</dt>
+                    <dd>
+                        Cyan at rest, mixed toward red as bass rises and then toward
+                        violet as mid fills in. The resting tone is nudged by the
+                        spectral centroid &mdash; dark, bass-led material sinks toward
+                        deep blue, airy material lifts toward icy violet &mdash; leaving
+                        the bass and mid moves exactly as they were.
+                    </dd>
+
+                    <dt>Camera shake</dt>
+                    <dd>
+                        Driven by the larger of the onset envelope and 0.6&times; the
+                        beat pulse, scaled by the track's crest factor, with a little
+                        steady bass mixed in. Shared by all three modes.
+                    </dd>
+                </dl>
+
+                <h3>Terrain: how the history is held</h3>
+                <p>
+                    320 rows of past spectra live in a ring-buffer texture, one row
+                    written per tick, and the mesh reads backwards from the write
+                    cursor. Nothing is ever copied or rebuilt, so a frame costs one row
+                    upload however much history is on screen.
+                </p>
+                <p>
+                    The scroll is locked to the beat &mdash; 24 rows per beat once a
+                    tempo is known &mdash; rather than to the clock. That is what makes
+                    the strip legible: a bar is always the same length of terrain, so
+                    repeated material lines up into columns you can see down. At 120 BPM
+                    this works out to the same 48 rows a second the untimed fallback
+                    uses, so locking on does not visibly change the speed.
+                </p>
+                <p>
+                    Light comes mostly from <b>slope</b>, not height. Lit by height, the
+                    terrain is brightest exactly where it is flattest &mdash; a band
+                    that stays loud becomes a glowing plateau and the ridges carrying
+                    the detail disappear inside it. Colour comes from frequency, so a
+                    ridge tells you what caused it.
+                </p>
+
+                <h3>Membrane: the simulation</h3>
+                <p>
+                    A discrete wave equation, <i>u&prime; = 2u &minus; u&#8203;<sub>prev</sub> +
+                    c&sup2;&nabla;&sup2;u</i>, run on a 512&times;512 grid across a pair
+                    of render targets, 190 fixed steps a second regardless of frame
+                    rate. The wave equation has no notion of elapsed time &mdash; one
+                    step is one step &mdash; so tying steps to frames would make the head
+                    ring visibly faster on a 144Hz display than on a 60Hz one.
+                </p>
+                <p>
+                    The boundary is a circle rather than a square, because four straight
+                    reflectors produce standing patterns that look like plumbing while a
+                    circular one produces the mode shapes of an actual drumhead. Strikes
+                    are injected as displacement rather than velocity, so a hit appears
+                    at once as a dome that then collapses into a travelling ring.
+                </p>
+                <p>
+                    <b>Ring</b> sets how much of each step's energy is retained. The
+                    whole useful range sits just below 1, and the top of it is
+                    deliberately short of where it could go: a head struck three times a
+                    second takes energy in faster than a longer ring gives it back, and
+                    what looks like a brighter setting is really an unbounded one. Noisy
+                    material is damped harder than tonal material on top of this, which
+                    is how the two behave &mdash; a struck drum rings, a cymbal wash does
+                    not.
+                </p>
+
+                <h3>The signal chain</h3>
+                <ol class="doc-chain">
+                    <li>
+                        <b>FFT</b> &mdash; 4096-point, read as float rather than byte
+                        data. The byte API clamps to a fixed dB window and would throw
+                        away exactly the quiet detail the calibration needs. The
+                        browser's own smoothing is disabled, because it blurs the
+                        transients that onset detection depends on.
+                    </li>
+                    <li>
+                        <b>Bands</b> &mdash; folded into seven perceptual bands defined
+                        in Hz, not bin indices: sub 20&ndash;60, bass 60&ndash;160,
+                        low-mid 160&ndash;400, mid 400&ndash;1.2k, high-mid
+                        1.2&ndash;3.5k, presence 3.5&ndash;8k, air 8&ndash;16k. Bin
+                        numbers only mean anything for one sample rate, and system
+                        capture and mic capture routinely differ.
+                    </li>
+                    <li>
+                        <b>Normalise</b> &mdash; each band tracks its own floor and
+                        ceiling, then has an exponent bent until its average output
+                        lands at 0.5. This is what lets one sensitivity setting work
+                        across genres: the engine calibrates per band, continuously.
+                    </li>
+                    <li>
+                        <b>Detail bands</b> &mdash; a second, much finer log-spaced set
+                        of 72 bands from 30Hz to 16kHz, calibrated the same way, for the
+                        modes that draw the spectrum itself rather than a three-value
+                        fold of it. It is kept separate from the onset band set below
+                        because the two want opposite things: onset detection wants few
+                        wide bands, so one transient lifts most of them at once, and a
+                        picture of the spectrum wants as many as the transform supports.
+                    </li>
+                    <li>
+                        <b>Chroma</b> &mdash; the spectrum folded onto the twelve pitch
+                        classes, and from that a key estimate, correlating against the
+                        Krumhansl-Kessler profiles for all 24 keys. What a bin
+                        contributes is not its energy but its <i>salience</i>: how far it
+                        stands above its own spectral neighbourhood. Raw energy gives an
+                        almost flat vector for any real mix, because a snare or a cymbal
+                        spreads energy over every pitch class at once and there are two
+                        orders of magnitude more noise bins than tonal ones. This is what
+                        the <b>Key</b> readout comes from.
+                    </li>
+                    <li>
+                        <b>Onsets</b> &mdash; spectral flux over 28 log-spaced bands from
+                        40Hz to 15kHz, summing the positive dB change across all of
+                        them. Watching low-end energy alone only ever finds kick drums;
+                        this fires on snares, plucked strings, piano attacks and
+                        consonants too. The threshold is the running mean plus 2.0
+                        deviations over about two seconds, and a hit must also be
+                        1.35&times; the mean &mdash; so it self-scales from a sparse
+                        arrangement to a wall of sound.
+                    </li>
+                    <li>
+                        <b>Tempo</b> &mdash; autocorrelation of that novelty signal over
+                        an 8-second window, searching 62&ndash;190 BPM, with a
+                        log-normal prior centred at 120 to resolve half- and double-time
+                        peaks. Four successive estimates must agree within 5% before a
+                        number is shown at all; until then the readout says
+                        <i>Searching</i>.
+                    </li>
+                    <li>
+                        <b>Gain</b> &mdash; the auto-sensitivity loop described below.
+                    </li>
+                    <li>
+                        <b>Smoothing</b> &mdash; attack times of 28ms bass, 40ms mid,
+                        18ms treble. Release adapts to the music: once tempo is known it
+                        is 0.28 of a beat, otherwise it slides between 110ms and 380ms
+                        based on onset rate. Fast material wants short releases so hits
+                        stay separate; sustained material wants long ones so it breathes
+                        instead of flickering.
+                    </li>
+                    <li>
+                        <b>Limit</b> &mdash; a soft knee from 0.75 up to a ceiling of
+                        1.10. The shader's displacement amounts were tuned against a
+                        signal that could not exceed 1, so letting gain push far past
+                        that would change how the visualiser looks, not just how
+                        reliably it reacts.
+                    </li>
+                </ol>
+
+                <h3>Auto sensitivity</h3>
+                <p>
+                    A closed loop that holds the average of the three smoothed bands at
+                    <b>0.42</b>. Two things about it are deliberate, and they explain
+                    most of its behaviour.
+                </p>
+                <p>
+                    <b>It measures the output, not the input.</b> The attack/release
+                    smoothing is asymmetric, which biases the delivered value above the
+                    raw one; regulating the input would therefore overshoot
+                    consistently. Measuring what the shader actually receives makes the
+                    target mean exactly what it says.
+                </p>
+                <p>
+                    <b>It falls faster than it rises</b> &mdash; 0.9 against 0.25 in
+                    gain fraction per second, clamped to a narrow 0.6&ndash;2.2 range.
+                    Every failure mode of a loop like this ends with it being too loud,
+                    so the one dangerous direction is made slow and bounded.
+                </p>
+                <p>
+                    Gain is also only allowed to <i>rise</i> when four things hold at
+                    once: the gate is open, six seconds of audio have been analysed, the
+                    delivered level is above 0.12, and the loudness envelope is within
+                    12dB of its own recent ceiling. When the bands read low it is
+                    usually not because the gain is wrong &mdash; it is silence, or a
+                    track change the per-band calibration has not caught up with. Both
+                    resolve on their own, and integrating through them just means the
+                    correct level arrives multiplied by whatever the loop wound up to
+                    meanwhile. That is the failure you would otherwise see as the
+                    visualiser going wild at the start of a quiet song. Gain is always
+                    free to come back down.
+                </p>
+
+                <h3>The silence gate</h3>
+                <p>
+                    Anything more than 45dB below the loudest recent moment counts as
+                    silence. That is generous on purpose &mdash; 40dB between a hit and
+                    the gap after it is ordinary musical dynamics, and gating that would
+                    starve onset detection of exactly the quiet passages it needs to
+                    hear. There is also an absolute backstop at &minus;105dB, because a
+                    purely relative gate cannot recognise true silence: a steady noise
+                    floor sits at its own ceiling and so always reads as "playing".
+                    Since the usual way to start is to grant capture and <i>then</i> go
+                    press play, without that backstop the engine would spend the gap
+                    calibrating itself to line noise.
+                </p>
+                <p>
+                    The gate opens in 0.15s and closes over 1.2s. It is meant to detect
+                    that the music has <i>stopped</i>, not to follow its level &mdash;
+                    closing at the speed of the signal would ride the gaps between hits
+                    and amplitude-modulate everything downstream.
+                </p>
+
+                <h3>Reading the telemetry</h3>
+                <dl class="doc-map">
+                    <dt>Tempo / Conf</dt>
+                    <dd>Detected BPM and the tracker's confidence in it. Below 25% no tempo is reported at all.</dd>
+                    <dt>Onsets</dt>
+                    <dd>Detected transients per second, smoothed. Around 3.5/s counts as fully percussive material.</dd>
+                    <dt>Gate</dt>
+                    <dd>Open, closing or shut &mdash; whether the engine believes something is playing.</dd>
+                    <dt>Gain</dt>
+                    <dd>What the auto loop has settled on, or your manual value.</dd>
+                    <dt>Crest</dt>
+                    <dd>How much headroom the track leaves above its own average. Near 0% is a compressed master; high is an acoustic recording with real transients.</dd>
+                    <dt>Key</dt>
+                    <dd>The key the chroma analysis has settled on, or <i>Atonal</i> when no key stands clear of the alternatives &mdash; which is the honest answer for percussion, noise and a good deal of electronic music. It is deliberately slow: the correlations are averaged over several seconds before a decision is taken, so a passing chord cannot flip the reading.</dd>
+                    <dt>Frame</dt>
+                    <dd>Render time and frame rate. If this drops in Sphere mode, lower the particle count &mdash; the value turns amber to say so. The other two modes have a fixed cost that does not depend on any control.</dd>
+                    <dt>Bass / Mid / Treb</dt>
+                    <dd>The three values actually handed to the shader this frame, after smoothing and the limiter.</dd>
+                    <dt>Profile</dt>
+                    <dd>The engine's own classification of the material, as texture / tone.</dd>
+                </dl>
+
+                <h3>Keyboard</h3>
+                <table class="doc-keys">
+                    <tr><td>1&ndash;3</td><td>Pick a visualiser directly</td></tr>
+                    <tr><td>V</td><td>Step through the visualisers (Shift+V goes back)</td></tr>
+                    <tr><td>H</td><td>Hide or show all interface</td></tr>
+                    <tr><td>F</td><td>Fullscreen</td></tr>
+                    <tr><td>A</td><td>Toggle auto sensitivity</td></tr>
+                    <tr><td>R</td><td>Reset every control to its default</td></tr>
+                    <tr><td>?</td><td>Open or close this section</td></tr>
+                </table>
+                <p class="doc-note">
+                    Settings are saved in this browser and restored on reload. R clears them.
+                </p>
+            </div>
+        </section>
+    </div>
+
+    <!-- ============================== TELEMETRY =========================== -->
+    <div id="hud-telemetry" class="ui-layer hud-panel">
+        <div class="hud-head">
+            <span class="hud-title">Engine</span>
+            <button id="fullscreen-btn" title="Fullscreen (F)">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
                     <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
                 </svg>
             </button>
         </div>
 
-        <div class="control-row">
-            <span class="control-label">Particles <span id="val-particles">250000</span></span>
-            <input type="range" id="inp-particles" min="10000" max="1000000" step="10000" value="250000">
-        </div>
-        <div class="control-row">
-            <span class="control-label">Brightness <span id="val-brightness">0.8</span></span>
-            <input type="range" id="inp-brightness" min="0.1" max="5.0" step="0.1" value="0.8">
-        </div>
-        <div class="control-row">
-            <span class="control-label">Sensitivity <span id="val-sensitivity">0.5</span></span>
-            <input type="range" id="inp-sensitivity" min="0.0" max="2.0" step="0.01" value="0.5">
-        </div>
-    </div>
+        <div class="tel-row"><span>Tempo</span><b id="val-bpm">&mdash;</b></div>
+        <div class="tel-row"><span>Conf</span><b id="val-conf">&mdash;</b></div>
+        <div class="tel-row"><span>Onsets</span><b id="val-onsets">&mdash;</b></div>
+        <div class="tel-row"><span>Gate</span><b id="val-gate">&mdash;</b></div>
+        <div class="tel-row"><span>Gain</span><b id="val-gain">&mdash;</b></div>
+        <div class="tel-row"><span>Crest</span><b id="val-crest">&mdash;</b></div>
+        <div class="tel-row"><span>Key</span><b id="val-key">&mdash;</b></div>
+        <div class="tel-row"><span>Frame</span><b id="val-fps">&mdash;</b></div>
 
-    <div id="canvas-container"></div>
+        <div class="tel-bars">
+            <div class="tel-bar"><span>Bass</span><i><u id="bar-bass"></u></i><b id="val-bass">0.00</b></div>
+            <div class="tel-bar"><span>Mid</span><i><u id="bar-mid"></u></i><b id="val-mid">0.00</b></div>
+            <div class="tel-bar"><span>Treb</span><i><u id="bar-treble"></u></i><b id="val-treble">0.00</b></div>
+        </div>
+
+        <div class="tel-profile" id="val-profile">Awaiting input</div>
+    </div>
 
     <script type="module" src="js/main.js"></script>
 </body>

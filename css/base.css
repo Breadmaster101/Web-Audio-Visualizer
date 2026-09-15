@@ -2,9 +2,11 @@
     --bg: #000000;
     --fg: #ffffff;
     --border: #ffffff;
-    --muted: #888;
-    --dim: #666;
-    --rule: #333;
+    --muted: #999;
+    --dim: #6b6b6b;
+    --rule: #2e2e2e;
+    /* Used only where a value needs to say "this is costing you something". */
+    --warn: #d8a53c;
 }
 
 body {
@@ -35,7 +37,8 @@ h1 {
     text-transform: uppercase;
 }
 
-button {
+/* Scoped to the start screen; HUD buttons style themselves in hud.css. */
+#start-overlay button {
     background: transparent;
     color: var(--fg);
     border: 1px solid var(--fg);
@@ -47,21 +50,27 @@ button {
     transition: all 0.2s ease;
 }
 
-button:hover {
+#start-overlay button:hover {
     background: var(--fg);
     color: var(--bg);
 }
 
-/* Chrome-hiding: UI fades out while the pointer sits still. */
+/*
+ * Chrome-hiding. Two independent reasons the UI can be out of the way:
+ * `ui-idle` is the automatic fade after a period of no input, `ui-hidden` is
+ * the deliberate H toggle. Keeping them separate means moving the mouse does
+ * not undo a hide you asked for.
+ */
 .ui-layer {
-    transition: opacity 0.3s ease;
+    transition: opacity 0.35s ease;
 }
 
 body.ui-idle {
     cursor: none;
 }
 
-body.ui-idle .ui-layer {
+body.ui-idle .ui-layer,
+body.ui-hidden .ui-layer {
     opacity: 0;
     pointer-events: none;
 }

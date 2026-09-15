@@ -1,0 +1,698 @@
+/*
+ * The edge HUD.
+ *
+ * Two panels anchored to opposite screen edges: controls and their
+ * documentation flush left, live engine telemetry bottom right.
+ *
+ * Both sit on a flat scrim with one hairline rule marking the inner edge. An
+ * earlier version faded that edge out instead, which left the scrollbar
+ * apparently floating in mid-air over the scene — a soft edge and a hard
+ * scrollbar cannot occupy the same boundary.
+ */
+
+:root {
+    /*
+     * One measure for the whole column. Labels, values, sliders, rules and body
+     * text all end on the same right edge, which is what keeps a panel this
+     * text-heavy from reading as a ragged pile — and it keeps the right-aligned
+     * values inside the opaque part of the scrim rather than out in its fade.
+     */
+    --measure: 34ch;
+}
+
+#hud-controls {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    box-sizing: border-box;
+    width: 300px;
+    padding: 22px 26px 40px 24px;
+    z-index: 10;
+
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+
+    overflow-y: auto;
+    overscroll-behavior: contain;
+
+    background: rgba(0, 0, 0, 0.9);
+    border-right: 1px solid var(--rule);
+}
+
+/* Everything in the column shares the same right-hand edge. */
+#hud-controls > *,
+.doc-body {
+    max-width: var(--measure);
+}
+
+#hud-telemetry {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    box-sizing: border-box;
+    width: 236px;
+    padding: 22px 24px 28px 26px;
+    z-index: 10;
+
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+
+    background: rgba(0, 0, 0, 0.9);
+    border-left: 1px solid var(--rule);
+    border-top: 1px solid var(--rule);
+}
+
+/* Slim, unobtrusive scrollbar — the column is long by design. */
+#hud-controls::-webkit-scrollbar {
+    width: 3px;
+}
+
+#hud-controls::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+#hud-controls::-webkit-scrollbar-thumb {
+    background: var(--rule);
+}
+
+#hud-controls::-webkit-scrollbar-thumb:hover {
+    background: var(--dim);
+}
+
+#hud-controls {
+    scrollbar-width: thin;
+    scrollbar-color: var(--rule) transparent;
+}
+
+/* --- Panel headings --- */
+
+.hud-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.hud-title {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--fg);
+}
+
+.hud-keys {
+    font-size: 9px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--dim);
+}
+
+.hud-group {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--dim);
+    margin-bottom: -8px;
+}
+
+.hud-rule {
+    height: 1px;
+    background: var(--rule);
+}
+
+/* --- One control: label + value, slider, description --- */
+
+.ctl {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+
+.ctl[hidden] {
+    display: none;
+}
+
+.ctl-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+}
+
+.ctl-label {
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--fg);
+}
+
+.ctl-head-right {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+}
+
+.ctl-value {
+    font-size: 11px;
+    color: var(--muted);
+    /* Values update several times a second; proportional digits would jitter. */
+    font-variant-numeric: tabular-nums;
+}
+
+.ctl-value.warn {
+    color: var(--warn);
+}
+
+/*
+ * Descriptions are the bulk of the column, so they get sentence case and real
+ * line height instead of the tracked-out uppercase used for labels. Without
+ * that contrast the whole panel reads as one undifferentiated texture.
+ */
+.ctl-desc {
+    margin: 0;
+    font-size: 10px;
+    line-height: 1.65;
+    color: var(--dim);
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+.ctl-desc b {
+    font-weight: 400;
+    color: var(--muted);
+}
+
+.ctl-desc i {
+    font-style: normal;
+    color: var(--muted);
+}
+
+/* --- Sliders --- */
+
+input[type=range] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    background: transparent;
+    margin: 2px 0;
+    cursor: pointer;
+}
+
+input[type=range]:focus {
+    outline: none;
+}
+
+input[type=range]:focus-visible::-webkit-slider-thumb {
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.25);
+}
+
+input[type=range]:focus-visible::-moz-range-thumb {
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.25);
+}
+
+/*
+ * --fill is written by ControlPanel on every input event. A plain uniform track
+ * gives no read of the value without looking at the number.
+ */
+input[type=range]::-webkit-slider-runnable-track {
+    height: 1px;
+    background: linear-gradient(
+        to right,
+        var(--fg) 0%,
+        var(--fg) var(--fill, 0%),
+        var(--rule) var(--fill, 0%),
+        var(--rule) 100%
+    );
+}
+
+input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 10px;
+    width: 10px;
+    margin-top: -5px;
+    background: var(--fg);
+    border: none;
+    border-radius: 0;
+}
+
+input[type=range]:hover::-webkit-slider-thumb {
+    transform: scale(1.25);
+}
+
+/* Firefox needs its own set; without these it falls back to the OS slider. */
+input[type=range]::-moz-range-track {
+    height: 1px;
+    background: var(--rule);
+}
+
+input[type=range]::-moz-range-progress {
+    height: 1px;
+    background: var(--fg);
+}
+
+input[type=range]::-moz-range-thumb {
+    height: 10px;
+    width: 10px;
+    background: var(--fg);
+    border: none;
+    border-radius: 0;
+}
+
+input[type=range]:hover::-moz-range-thumb {
+    transform: scale(1.25);
+}
+
+/* Auto mode leaves the slider live as a display, but read-only. */
+input[type=range]:disabled {
+    cursor: default;
+}
+
+input[type=range]:disabled::-webkit-slider-thumb {
+    background: var(--dim);
+}
+
+input[type=range]:disabled:hover::-webkit-slider-thumb {
+    transform: none;
+}
+
+input[type=range]:disabled::-webkit-slider-runnable-track {
+    background: linear-gradient(
+        to right,
+        var(--dim) 0%,
+        var(--dim) var(--fill, 0%),
+        var(--rule) var(--fill, 0%),
+        var(--rule) 100%
+    );
+}
+
+input[type=range]:disabled::-moz-range-thumb {
+    background: var(--dim);
+}
+
+input[type=range]:disabled::-moz-range-progress {
+    background: var(--dim);
+}
+
+/*
+ * --- The visualiser picker ---
+ *
+ * A list rather than a segmented control. Names alone would fit across a 300px
+ * column at this count, but each one needs a line of explanation to be worth
+ * anything: these modes react to genuinely different parts of the analysis, and
+ * "Terrain" tells you nothing on its own. Laying them out as rows gives that
+ * line somewhere to live, and leaves room for the next one.
+ */
+
+.mode-list {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--rule);
+}
+
+.mode-btn {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 2px 8px;
+    padding: 8px 10px;
+    background: transparent;
+    border: none;
+    /* Collapses into the row above rather than doubling the hairline. */
+    border-top: 1px solid var(--rule);
+    font-family: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.mode-btn:first-child {
+    border-top: none;
+}
+
+.mode-name {
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+.mode-key {
+    font-size: 9px;
+    color: var(--rule);
+    align-self: center;
+}
+
+/*
+ * The tagline spans both columns so it runs the full width of the row instead
+ * of wrapping in a narrow gutter beside the digit.
+ */
+.mode-tag {
+    grid-column: 1 / -1;
+    font-size: 9px;
+    line-height: 1.55;
+    color: var(--dim);
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+.mode-btn:hover {
+    background: rgba(255, 255, 255, 0.045);
+}
+
+.mode-btn:hover .mode-name {
+    color: var(--fg);
+}
+
+.mode-btn:focus-visible {
+    outline: 1px solid var(--muted);
+    outline-offset: -1px;
+}
+
+/*
+ * The selected row inverts. A left marker bar or a tinted background both read
+ * as "hovered" next to four unselected rows; only a full inversion is
+ * unambiguous at this size, and it matches how the toggles elsewhere in the
+ * column show their state.
+ */
+.mode-btn[aria-checked="true"] {
+    background: var(--fg);
+}
+
+.mode-btn[aria-checked="true"] .mode-name,
+.mode-btn[aria-checked="true"] .mode-key {
+    color: var(--bg);
+}
+
+.mode-btn[aria-checked="true"] .mode-tag {
+    /* Not pure --bg: at 9px, black on white is heavier than the row needs. */
+    color: rgba(0, 0, 0, 0.62);
+}
+
+.hud-group[hidden],
+.hud-rule[hidden] {
+    display: none;
+}
+
+/* --- Toggles and the source selector --- */
+
+.toggle {
+    background: transparent;
+    color: var(--dim);
+    border: 1px solid var(--rule);
+    padding: 2px 7px;
+    font-family: inherit;
+    font-size: 8px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.toggle:hover {
+    background: transparent;
+    color: var(--muted);
+    border-color: var(--muted);
+}
+
+.toggle[aria-pressed="true"],
+.toggle[aria-pressed="true"]:hover {
+    background: var(--fg);
+    border-color: var(--fg);
+    color: var(--bg);
+}
+
+.seg {
+    display: flex;
+}
+
+.seg-btn {
+    background: transparent;
+    color: var(--dim);
+    border: 1px solid var(--rule);
+    padding: 3px 9px;
+    font-family: inherit;
+    font-size: 8px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+/* Collapse the shared border between the two halves. */
+.seg-btn + .seg-btn {
+    border-left: none;
+}
+
+.seg-btn:hover {
+    background: transparent;
+    color: var(--muted);
+    border-color: var(--muted);
+}
+
+.seg-btn[aria-pressed="true"],
+.seg-btn[aria-pressed="true"]:hover {
+    background: var(--fg);
+    border-color: var(--fg);
+    color: var(--bg);
+}
+
+#fullscreen-btn {
+    background: transparent;
+    border: none;
+    padding: 2px;
+    display: flex;
+    align-items: center;
+    color: var(--muted);
+    cursor: pointer;
+}
+
+#fullscreen-btn:hover {
+    background: transparent;
+    color: var(--fg);
+}
+
+#fullscreen-btn svg {
+    width: 13px;
+    height: 13px;
+    fill: currentColor;
+}
+
+/* --- Telemetry --- */
+
+.tel-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--dim);
+}
+
+.tel-row b {
+    font-weight: 400;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.tel-row b.warn {
+    color: var(--warn);
+}
+
+.tel-bars {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin-top: 10px;
+    padding-top: 12px;
+    border-top: 1px solid var(--rule);
+}
+
+/*
+ * span = label, i = track, u = fill, b = numeric value. Terse tags because
+ * these three rows are otherwise identical and pure structure.
+ */
+.tel-bar {
+    display: grid;
+    grid-template-columns: 34px 1fr 34px;
+    align-items: center;
+    gap: 8px;
+    font-size: 9px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--dim);
+}
+
+.tel-bar i {
+    display: block;
+    height: 3px;
+    background: var(--rule);
+}
+
+.tel-bar u {
+    display: block;
+    height: 100%;
+    width: 0;
+    background: var(--fg);
+    text-decoration: none;
+}
+
+.tel-bar b {
+    font-weight: 400;
+    color: var(--muted);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.tel-profile {
+    margin-top: 10px;
+    padding-top: 12px;
+    border-top: 1px solid var(--rule);
+    font-size: 9px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--dim);
+    text-align: right;
+}
+
+/* --- How it works --- */
+
+.doc-toggle {
+    background: transparent;
+    border: none;
+    padding: 0;
+    font-family: inherit;
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--muted);
+    cursor: pointer;
+    text-align: left;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.doc-toggle:hover {
+    background: transparent;
+    color: var(--fg);
+}
+
+.doc-caret {
+    display: inline-block;
+    font-size: 13px;
+    line-height: 1;
+    transition: transform 0.18s ease;
+}
+
+.doc-toggle[aria-expanded="true"] .doc-caret {
+    transform: rotate(90deg);
+}
+
+.doc-body {
+    margin-top: 18px;
+    color: var(--dim);
+    font-size: 10px;
+    line-height: 1.7;
+}
+
+.doc-body h3 {
+    margin: 22px 0 8px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+.doc-body h3:first-child {
+    margin-top: 0;
+}
+
+.doc-body p {
+    margin: 0 0 10px;
+}
+
+.doc-body b {
+    font-weight: 400;
+    color: var(--fg);
+}
+
+.doc-body i {
+    font-style: normal;
+    color: var(--muted);
+}
+
+.doc-map {
+    margin: 0;
+}
+
+.doc-map dt {
+    margin-top: 12px;
+    color: var(--muted);
+    text-transform: uppercase;
+    font-size: 9px;
+    letter-spacing: 1px;
+}
+
+.doc-map dd {
+    margin: 4px 0 0;
+    padding-left: 10px;
+    border-left: 1px solid var(--rule);
+}
+
+.doc-chain {
+    margin: 0;
+    padding-left: 16px;
+}
+
+.doc-chain li {
+    margin-bottom: 10px;
+    padding-left: 2px;
+}
+
+.doc-chain li::marker {
+    color: var(--rule);
+}
+
+.doc-keys {
+    border-collapse: collapse;
+    width: 100%;
+}
+
+.doc-keys td {
+    padding: 3px 0;
+    vertical-align: top;
+}
+
+.doc-keys td:first-child {
+    width: 34px;
+    color: var(--fg);
+    text-transform: uppercase;
+}
+
+.doc-note {
+    margin-top: 14px;
+    padding-top: 10px;
+    border-top: 1px solid var(--rule);
+    color: var(--rule-text, var(--dim));
+}
+
+/*
+ * Narrow windows: the two panels would collide, so the telemetry drops its
+ * scrim and the control column takes the full width it can get.
+ */
+@media (max-width: 760px) {
+    #hud-controls {
+        width: 300px;
+        max-width: 100%;
+    }
+
+    #hud-telemetry {
+        display: none;
+    }
+}
