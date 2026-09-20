@@ -22,6 +22,8 @@ export const CONFIG = {
     shake: 1.0,
     autoRotate: true,
     autoRotateSpeed: 0.5,
+    /** Flare only: split the diffraction needles into red, green and blue. */
+    chromaticAberration: true,
     /** Which visualiser is on screen. Ids come from `visuals/modes.js`. */
     mode: 'sphere'
 };

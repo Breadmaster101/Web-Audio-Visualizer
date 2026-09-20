@@ -12,7 +12,9 @@ import { simplexNoise3D } from './noise.glsl.js';
  *
  * The needles are the expensive part. Every pixel evaluates four octaves of
  * noise three times (once per colour channel, at a slightly different angle),
- * which is why the pass runs at half resolution to begin with. The noise is
+ * which is why the pass runs at half resolution to begin with. With the
+ * chromatic split turned off the field is sampled once and shared across the
+ * channels, so that setting is also the cheaper one. The noise is
  * sampled on the unit circle rather than on the angle, so there is no seam at
  * ±π; time goes in the third dimension, so the rays evolve in place instead of
  * sliding sideways.
@@ -25,6 +27,8 @@ export const flareFragmentShader = /* glsl */ `
     uniform float uTreble;
     /** Drawing-buffer aspect, so the flare stays round on any window. */
     uniform float uAspect;
+    /** 1 splits the needles into R, G and B; 0 draws them white. */
+    uniform float uDispersion;
 
     varying vec2 vUv;
 
@@ -83,14 +87,22 @@ export const flareFragmentShader = /* glsl */ `
         hStreak *= exp(-abs(uv.x) * 2.4);
         hStreak *= 1.0 + 0.15 * sin(uv.x * 60.0 - uTime * 6.0);
 
-        // 5. Chromatic needles: the same field sampled at three angles, with
-        //    the split widening with distance the way real dispersion does.
-        float chromShift = (0.018 + uTreble * 0.022) * dist;
-        vec3 rays = vec3(
-            needleLayer(angle, dist, -chromShift),
-            needleLayer(angle, dist, 0.0),
-            needleLayer(angle, dist, chromShift)
-        ) * 0.32;
+        // 5. Diffraction needles. With dispersion on, the same field is
+        //    sampled at three angles, the split widening with distance the way
+        //    real dispersion does; off, one sample serves all three channels.
+        //    The branch is on a uniform, so it costs nothing per pixel.
+        vec3 rays;
+        if (uDispersion > 0.5) {
+            float chromShift = (0.018 + uTreble * 0.022) * dist;
+            rays = vec3(
+                needleLayer(angle, dist, -chromShift),
+                needleLayer(angle, dist, 0.0),
+                needleLayer(angle, dist, chromShift)
+            );
+        } else {
+            rays = vec3(needleLayer(angle, dist, 0.0));
+        }
+        rays *= 0.32;
 
         // Scintillation in the glare, only when there is treble to drive it.
         rays *= 1.0 + 0.12 * sin(angle * 45.0 + uTime * 18.0) * uTreble;

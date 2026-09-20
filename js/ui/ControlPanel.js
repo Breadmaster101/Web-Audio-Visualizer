@@ -65,6 +65,7 @@ export class ControlPanel {
         this.setupModes();
         this.setupAutoSensitivity();
         this.setupAutoRotate();
+        this.setupChromatic();
         this.setupSource();
         this.setupDoc();
         this.setupFullscreen();
@@ -155,6 +156,10 @@ export class ControlPanel {
             if (block) block.hidden = !shown;
             if (shown && entry.spec.apply) entry.spec.apply(parseFloat(entry.slider.value), this.ctx);
         }
+
+        // The one control with no slider behind it.
+        this.chromaticRow.hidden = !active.has('chromatic');
+        this.renderChromatic();
 
         // Trim has a second reason to be hidden, so it gets the last word.
         this.renderAutoSensitivity();
@@ -274,6 +279,33 @@ export class ControlPanel {
         this.renderAutoRotate();
     }
 
+    /**
+     * Flare's colour split. A plain on/off with no slider under it: the amount
+     * of dispersion is tied to the treble, and a second knob on top of that
+     * would only fight it.
+     */
+    setupChromatic() {
+        this.chromaticButton = document.getElementById('btn-chromatic');
+        this.chromaticRow = document.getElementById('ctl-chromatic');
+
+        CONFIG.chromaticAberration = this.settings.get('chromaticAberration', true) !== false;
+
+        this.renderChromatic = () => {
+            this.chromaticButton.setAttribute('aria-pressed', String(CONFIG.chromaticAberration));
+            this.chromaticButton.textContent = CONFIG.chromaticAberration ? 'On' : 'Off';
+            this.ctx.visualizer.mode?.setChromaticAberration?.(CONFIG.chromaticAberration);
+        };
+
+        this.chromaticButton.addEventListener('click', () => this.toggleChromatic());
+        this.renderChromatic();
+    }
+
+    toggleChromatic() {
+        CONFIG.chromaticAberration = !CONFIG.chromaticAberration;
+        this.settings.set('chromaticAberration', CONFIG.chromaticAberration);
+        this.renderChromatic();
+    }
+
     // --- Audio source --------------------------------------------------
 
     setupSource() {
@@ -349,6 +381,7 @@ export class ControlPanel {
 
         if (!CONFIG.autoSensitivity) this.toggleAutoSensitivity();
         if (!CONFIG.autoRotate) this.rotateButton.click();
+        if (!CONFIG.chromaticAberration) this.toggleChromatic();
         this.setDoc(false);
 
         // Last, because switching modes replays the sliders into the new one and

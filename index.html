@@ -121,6 +121,20 @@
             </p>
         </div>
 
+        <div class="ctl" id="ctl-chromatic" hidden>
+            <div class="ctl-head">
+                <span class="ctl-label">Colour split</span>
+                <span class="ctl-head-right">
+                    <button id="btn-chromatic" class="toggle" aria-pressed="true">On</button>
+                </span>
+            </div>
+            <p class="ctl-desc">
+                Splits the rays into red, green and blue fringes, the way a lens
+                smears a bright light. Turn it off for clean white rays. Off is
+                also a little cheaper to draw.
+            </p>
+        </div>
+
         <div class="hud-rule"></div>
 
         <!-- --------------------------- REACTIVITY -------------------------- -->
@@ -236,7 +250,8 @@
                         A picture of what the eye does to a bright source rather than
                         of the source itself: a blown-out core, a corona, faint
                         interference rings, the horizontal bar from a squint, and a
-                        field of diffraction needles split into red, green and blue.
+                        field of diffraction needles split into red, green and blue
+                        (or left white, with <b>Colour split</b> off).
                         <b>Bass</b> swells the core, <b>treble</b> excites the fine
                         crackle in the rays, and each onset flashes the whole thing
                         brighter. The flash is instant and the fade is not &mdash;

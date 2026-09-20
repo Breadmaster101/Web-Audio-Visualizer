@@ -10,7 +10,7 @@ import { Flare } from './Flare.js';
  * — the picker, the keyboard shortcuts, the control-column filtering and the
  * saved preference all read from this list.
  *
- * `controls` names the sliders that mean something for the mode. The ones it
+ * `controls` names the controls that mean something for the mode. The ones it
  * leaves out are hidden rather than disabled, because a control that cannot
  * affect anything is not information, it is furniture. The three reactivity
  * controls are never listed: they act on the analysis engine, which is shared,
@@ -35,7 +35,7 @@ export const MODES = [
         id: 'flare',
         label: 'Flare',
         tagline: 'A point of light, stared at. The music decides how hard it burns.',
-        controls: ['brightness', 'bloom'],
+        controls: ['brightness', 'bloom', 'chromatic'],
         // Drawn in clip space, so the camera is irrelevant: the position is a
         // formality and auto-rotate would have nothing to turn. The shader
         // tonemaps its own glare and already fills the frame with soft light, so

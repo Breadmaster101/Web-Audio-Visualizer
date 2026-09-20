@@ -33,7 +33,8 @@ const IDLE = { intensity: 0.04, bass: 0.0, treble: 0.0 };
  * Everything here is a picture of what the eye does to a bright source rather
  * than of the source itself — a blown-out core, a corona, faint interference
  * rings, the horizontal bar from a squint, and a field of diffraction needles
- * split into red, green and blue. The music drives how hard it burns.
+ * split into red, green and blue (or left white, if the chromatic split is
+ * turned off). The music drives how hard it burns.
  *
  * Two passes. The light is rendered as linear HDR into a half-resolution float
  * target, then a full-screen quad in the main scene upsamples it, tonemaps it
@@ -60,7 +61,8 @@ export class Flare extends VisualMode {
                 uIntensity: { value: 0 },
                 uBass: { value: 0 },
                 uTreble: { value: 0 },
-                uAspect: { value: 1 }
+                uAspect: { value: 1 },
+                uDispersion: { value: CONFIG.chromaticAberration ? 1 : 0 }
             },
             vertexShader: flareVertexShader,
             fragmentShader: flareFragmentShader,
@@ -135,6 +137,11 @@ export class Flare extends VisualMode {
 
     setBrightness(value) {
         this.brightness = value;
+    }
+
+    /** Whether the needles are split into red, green and blue. */
+    setChromaticAberration(enabled) {
+        this.lightMaterial.uniforms.uDispersion.value = enabled ? 1 : 0;
     }
 
     /**
