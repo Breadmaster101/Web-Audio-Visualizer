@@ -56,8 +56,9 @@
             <div class="mode-list" id="mode-list" role="radiogroup" aria-label="Visualiser"></div>
             <p class="ctl-desc">
                 <b>Sphere</b> draws the spectrum as it is right now. <b>Flare</b>
-                is a point of light the music makes burn. The controls below
-                change to match whichever visualiser is on screen.
+                is a point of light the music makes burn. <b>Warp</b> is a
+                feedback tunnel that keeps the last few seconds on screen. The
+                controls below change to match whichever visualiser is on screen.
             </p>
         </div>
 
@@ -230,7 +231,7 @@
 
                 <h3>What you are looking at</h3>
                 <p>
-                    One analysis engine, described further down, and two
+                    One analysis engine, described further down, and three
                     visualisers built on the values it produces.
                 </p>
 
@@ -259,6 +260,27 @@
                         as linear light at half resolution, then tonemapped and
                         dithered at full resolution, which is why the fixed cost is
                         low and the gradients do not band.
+                    </dd>
+
+                    <dt>Warp &mdash; the last few seconds, flying past</dt>
+                    <dd>
+                        A feedback tunnel. Each frame the previous frame is read
+                        back zoomed outward, turned a little, dimmed a little and
+                        shifted in hue, and this frame's spectrum is drawn over it
+                        as a ring around the centre &mdash; low bands at the top,
+                        high at the bottom, mirrored left and right. Nothing is
+                        cleared, so every ring the music has drawn is still there
+                        behind the current one, further out and fainter. It is
+                        the one visualiser with memory: a fill, a drop or a bar
+                        of silence stays visible for seconds afterward.
+                        <b>Bass</b> and each <b>onset</b> kick the zoom, so hits
+                        push the whole history outward; the <b>beat grid</b>
+                        drives the spin, which surges on every beat and reverses
+                        direction every eight; <b>treble</b> bends the spin by
+                        radius, twisting rays into spirals; and the <b>chroma</b>
+                        picks the ring's colour, averaged around the circle of
+                        fifths, so a key change recolours everything drawn from
+                        then on.
                     </dd>
                 </dl>
 

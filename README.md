@@ -3,12 +3,13 @@
 A GPU audio visualizer that reacts to system audio or microphone input, built on
 Three.js with custom shaders and bloom post-processing.
 
-Two visualisers, driven by one analysis engine:
+Three visualisers, driven by one analysis engine:
 
 | | | |
 |---|---|---|
 | **Sphere** | the spectrum, now | A quarter-million points displaced by four audio-driven fields. No memory: every frame is drawn from that frame's audio. |
 | **Flare** | a point of light, stared at | A blown-out core, corona, Airy rings, a squint bar and chromatic diffraction needles. Bass swells the core, treble crackles the rays, every onset flashes it. Instant attack, slow after-image release. |
+| **Warp** | the last few seconds, flying past | A feedback tunnel on a pair of render targets. The spectrum is drawn as a ring; every previous ring is still behind it, zoomed out, turned and fading. Bass and onsets kick the zoom, the beat grid drives the spin, treble twists it into spirals, chroma picks the colour. |
 
 ## Running
 
@@ -48,6 +49,7 @@ js/
     modes.js            The registry: one row per visualiser
     ParticleSystem.js   Sphere mode: point cloud + shader material
     Flare.js            Flare mode: half-res HDR light pass + full-res tonemap
+    Warp.js             Warp mode: ping-pong feedback tunnel + tonemap display
     CameraShake.js      Beat-driven camera jitter (shared)
   shaders/
     particles.vert.js   Sphere vertex shader (audio-driven displacement)
@@ -55,6 +57,8 @@ js/
     flare.vert.js       Clip-space quad shared by both flare passes
     flare.frag.js       Flare light pass (core, halo, rings, streak, needles)
     flare.tonemap.js    Flare display pass (upsample, ACES, dither)
+    warp.feedback.js    Warp feedback pass (zoom, spin, decay, hue drift, ring)
+    warp.display.js     Warp display pass (ACES, vignette, dither)
     noise.glsl.js       Reusable 3D simplex noise chunk
   ui/
     StartOverlay.js     Source-picker screen

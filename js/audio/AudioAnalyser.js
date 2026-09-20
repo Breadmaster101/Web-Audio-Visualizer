@@ -107,6 +107,21 @@ export class AudioAnalyser {
         return this.tempo.period;
     }
 
+    /** Position within the current beat, 0 at the beat and rising to 1 at the next. */
+    get beatPhase() {
+        return this.tempo.phase;
+    }
+
+    /** Smoothed strength of each of the twelve pitch classes, C first, 0..1. */
+    get chromaValues() {
+        return this.chroma.values;
+    }
+
+    /** How clearly a key is established, 0..1. Low for drums, noise and silence. */
+    get tonality() {
+        return this.chroma.tonality;
+    }
+
     /** Detected key, e.g. "F# min", or an empty string while none is established. */
     get key() {
         return this.chroma.keyName;

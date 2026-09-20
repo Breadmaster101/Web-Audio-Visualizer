@@ -1,5 +1,6 @@
 import { ParticleSystem } from './ParticleSystem.js';
 import { Flare } from './Flare.js';
+import { Warp } from './Warp.js';
 
 /**
  * The visualiser registry.
@@ -42,6 +43,17 @@ export const MODES = [
         // bloom has everything to catch: past about 0.2 it becomes one white disc.
         view: { position: [0, 0, 8], target: [0, 0, 0], autoRotate: false, bloomScale: 0.06 },
         create: (stage) => new Flare(stage)
+    },
+    {
+        id: 'warp',
+        label: 'Warp',
+        tagline: 'A feedback tunnel. The last few seconds of music, flying past.',
+        controls: ['brightness', 'bloom'],
+        // Clip space again, so the camera is a formality. The trails already
+        // carry their own glow; bloom is kept low so the ring stays a line
+        // rather than a smear.
+        view: { position: [0, 0, 8], target: [0, 0, 0], autoRotate: false, bloomScale: 0.12 },
+        create: (stage) => new Warp(stage)
     }
 ];
 
