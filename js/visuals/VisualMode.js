@@ -55,12 +55,6 @@ export class VisualMode {
     /** Sphere mode's point budget. Ignored by modes that do not draw points. */
     setCount(count) {}
 
-    /** Flight or scroll rate, as a multiple of the mode's natural pace. */
-    setSpeed(value) {}
-
-    /** How long the membrane rings. Ignored elsewhere. */
-    setDamping(value) {}
-
     /** Free every GPU resource this mode allocated. */
     dispose() {
         for (const object of this.owned) {

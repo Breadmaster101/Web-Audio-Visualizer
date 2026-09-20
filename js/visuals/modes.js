@@ -1,6 +1,5 @@
 import { ParticleSystem } from './ParticleSystem.js';
-import { SpectralTerrain } from './SpectralTerrain.js';
-import { Membrane } from './Membrane.js';
+import { Flare } from './Flare.js';
 
 /**
  * The visualiser registry.
@@ -33,26 +32,16 @@ export const MODES = [
         create: (stage) => new ParticleSystem(stage)
     },
     {
-        id: 'terrain',
-        label: 'Terrain',
-        tagline: 'The spectrum over time, as landscape. The horizon is six seconds ago.',
-        controls: ['brightness', 'bloom', 'shake', 'speed'],
-        // High enough that the near ridges do not hide the history behind them.
-        // At eye level the first loud band becomes a wall across the strip and
-        // the six seconds the mode exists to show are all behind it.
-        view: { position: [0, 12, 16], target: [0, 0.5, -10], autoRotate: false, bloomScale: 0.35 },
-        create: (stage) => new SpectralTerrain(stage)
-    },
-    {
-        id: 'membrane',
-        label: 'Membrane',
-        tagline: 'A drumhead the music strikes. Ripples interfere and the rim reflects.',
-        controls: ['brightness', 'bloom', 'shake', 'rotate', 'damping'],
-        // Far enough back that the whole head is in frame. Closer, the rim runs
-        // off both sides and the ripples have no boundary to visibly reflect
-        // off, which is most of what makes it read as a drumhead.
-        view: { position: [0, 9.5, 13.5], target: [0, 0, 0], autoRotate: true, bloomScale: 0.5 },
-        create: (stage) => new Membrane(stage)
+        id: 'flare',
+        label: 'Flare',
+        tagline: 'A point of light, stared at. The music decides how hard it burns.',
+        controls: ['brightness', 'bloom'],
+        // Drawn in clip space, so the camera is irrelevant: the position is a
+        // formality and auto-rotate would have nothing to turn. The shader
+        // tonemaps its own glare and already fills the frame with soft light, so
+        // bloom has everything to catch: past about 0.2 it becomes one white disc.
+        view: { position: [0, 0, 8], target: [0, 0, 0], autoRotate: false, bloomScale: 0.06 },
+        create: (stage) => new Flare(stage)
     }
 ];
 

@@ -303,9 +303,8 @@ input[type=range]:disabled::-moz-range-progress {
  *
  * A list rather than a segmented control. Names alone would fit across a 300px
  * column at this count, but each one needs a line of explanation to be worth
- * anything: these modes react to genuinely different parts of the analysis, and
- * "Terrain" tells you nothing on its own. Laying them out as rows gives that
- * line somewhere to live, and leaves room for the next one.
+ * anything: a name alone tells you nothing about what a mode reacts to. Laying them
+ * out as rows gives that line somewhere to live, and leaves room for the next one.
  */
 
 .mode-list {

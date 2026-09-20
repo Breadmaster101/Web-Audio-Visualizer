@@ -50,16 +50,14 @@
         <div class="ctl" id="ctl-mode">
             <div class="ctl-head">
                 <span class="ctl-label">Visualiser</span>
-                <span class="hud-keys">1&ndash;3 &middot; V</span>
+                <span class="hud-keys">1 &middot; V</span>
             </div>
             <!-- Filled in by ControlPanel from the registry in visuals/modes.js. -->
             <div class="mode-list" id="mode-list" role="radiogroup" aria-label="Visualiser"></div>
             <p class="ctl-desc">
-                Three different ways of drawing the same analysis. They react to
-                different things &mdash; <b>Sphere</b> to the spectrum right now,
-                <b>Terrain</b> to the spectrum over the last few seconds, and
-                <b>Membrane</b> to individual hits. The controls below change to
-                match whichever is on screen.
+                <b>Sphere</b> draws the spectrum as it is right now. <b>Flare</b>
+                is a point of light the music makes burn. The controls below
+                change to match whichever visualiser is on screen.
             </p>
         </div>
 
@@ -206,39 +204,6 @@
             </p>
         </div>
 
-        <div class="hud-rule" id="rule-mode"></div>
-
-        <!-- ------------------------ THIS VISUALISER ----------------------- -->
-        <div class="hud-group" id="grp-mode">This visualiser</div>
-
-        <div class="ctl" id="ctl-speed">
-            <div class="ctl-head">
-                <label class="ctl-label" for="inp-speed">Speed</label>
-                <span class="ctl-value" id="val-speed">1.00</span>
-            </div>
-            <input type="range" id="inp-speed" min="0.25" max="2.50" step="0.05" value="1.00">
-            <p class="ctl-desc">
-                How fast <b>Terrain</b> scrolls, and so how much history fits on
-                screen &mdash; slower keeps more of the song in view at once. The
-                scroll is locked to the detected beat, so this is a multiplier on
-                top of that tempo rather than a speed of its own.
-            </p>
-        </div>
-
-        <div class="ctl" id="ctl-damping">
-            <div class="ctl-head">
-                <label class="ctl-label" for="inp-damping">Ring</label>
-                <span class="ctl-value" id="val-damping">0.50</span>
-            </div>
-            <input type="range" id="inp-damping" min="0.00" max="1.00" step="0.05" value="0.50">
-            <p class="ctl-desc">
-                How long the membrane keeps moving after a hit. Low is a dead
-                thud that clears between beats; high rings for seconds, so
-                ripples from different hits overlap and interfere. Noisy material
-                is always damped harder than tonal material, on top of this.
-            </p>
-        </div>
-
         <div class="hud-rule"></div>
 
         <!-- ------------------------- HOW IT WORKS ------------------------- -->
@@ -251,10 +216,8 @@
 
                 <h3>What you are looking at</h3>
                 <p>
-                    One analysis engine, three ways of drawing it. All three receive
-                    exactly the same values from the same chain, described further
-                    down; they differ in <i>which</i> of those values they are built
-                    on, and that is why they do not look like variations of each other.
+                    One analysis engine, described further down, and two
+                    visualisers built on the values it produces.
                 </p>
 
                 <dl class="doc-map">
@@ -268,26 +231,19 @@
                         every frame is drawn from that frame's audio alone.
                     </dd>
 
-                    <dt>Terrain &mdash; the spectrum, over time</dt>
+                    <dt>Flare &mdash; a point of light, stared at</dt>
                     <dd>
-                        The same spectrum at far finer resolution, with <b>time</b> as a
-                        second spatial axis. Frequency runs left to right, low to high;
-                        the near edge is now and the horizon is about six seconds ago.
-                        A drop is a cliff, a breakdown a valley, a hi-hat pattern a field
-                        of ridges. It is the only mode here that shows you where the
-                        music has been rather than where it is.
-                    </dd>
-
-                    <dt>Membrane &mdash; the hits</dt>
-                    <dd>
-                        A circular drumhead with a wave equation running on it, struck by
-                        every detected onset. Because the simulation carries its state
-                        from frame to frame, this is the only mode that can show
-                        interference: two hits landing close together genuinely add, the
-                        rim genuinely reflects, and a lightly damped passage builds up
-                        standing waves. Where a strike lands is set by the spectral
-                        centroid, following a real drumhead's modes &mdash; low content
-                        near the centre, bright content out toward the rim.
+                        A picture of what the eye does to a bright source rather than
+                        of the source itself: a blown-out core, a corona, faint
+                        interference rings, the horizontal bar from a squint, and a
+                        field of diffraction needles split into red, green and blue.
+                        <b>Bass</b> swells the core, <b>treble</b> excites the fine
+                        crackle in the rays, and each onset flashes the whole thing
+                        brighter. The flash is instant and the fade is not &mdash;
+                        the glare lingers the way an after-image does. It is rendered
+                        as linear light at half resolution, then tonemapped and
+                        dithered at full resolution, which is why the fixed cost is
+                        low and the gradients do not band.
                     </dd>
                 </dl>
 
@@ -355,59 +311,9 @@
                     <dd>
                         Driven by the larger of the onset envelope and 0.6&times; the
                         beat pulse, scaled by the track's crest factor, with a little
-                        steady bass mixed in. Shared by all three modes.
+                        steady bass mixed in.
                     </dd>
                 </dl>
-
-                <h3>Terrain: how the history is held</h3>
-                <p>
-                    320 rows of past spectra live in a ring-buffer texture, one row
-                    written per tick, and the mesh reads backwards from the write
-                    cursor. Nothing is ever copied or rebuilt, so a frame costs one row
-                    upload however much history is on screen.
-                </p>
-                <p>
-                    The scroll is locked to the beat &mdash; 24 rows per beat once a
-                    tempo is known &mdash; rather than to the clock. That is what makes
-                    the strip legible: a bar is always the same length of terrain, so
-                    repeated material lines up into columns you can see down. At 120 BPM
-                    this works out to the same 48 rows a second the untimed fallback
-                    uses, so locking on does not visibly change the speed.
-                </p>
-                <p>
-                    Light comes mostly from <b>slope</b>, not height. Lit by height, the
-                    terrain is brightest exactly where it is flattest &mdash; a band
-                    that stays loud becomes a glowing plateau and the ridges carrying
-                    the detail disappear inside it. Colour comes from frequency, so a
-                    ridge tells you what caused it.
-                </p>
-
-                <h3>Membrane: the simulation</h3>
-                <p>
-                    A discrete wave equation, <i>u&prime; = 2u &minus; u&#8203;<sub>prev</sub> +
-                    c&sup2;&nabla;&sup2;u</i>, run on a 512&times;512 grid across a pair
-                    of render targets, 190 fixed steps a second regardless of frame
-                    rate. The wave equation has no notion of elapsed time &mdash; one
-                    step is one step &mdash; so tying steps to frames would make the head
-                    ring visibly faster on a 144Hz display than on a 60Hz one.
-                </p>
-                <p>
-                    The boundary is a circle rather than a square, because four straight
-                    reflectors produce standing patterns that look like plumbing while a
-                    circular one produces the mode shapes of an actual drumhead. Strikes
-                    are injected as displacement rather than velocity, so a hit appears
-                    at once as a dome that then collapses into a travelling ring.
-                </p>
-                <p>
-                    <b>Ring</b> sets how much of each step's energy is retained. The
-                    whole useful range sits just below 1, and the top of it is
-                    deliberately short of where it could go: a head struck three times a
-                    second takes energy in faster than a longer ring gives it back, and
-                    what looks like a brighter setting is really an unbounded one. Noisy
-                    material is damped harder than tonal material on top of this, which
-                    is how the two behave &mdash; a struck drum rings, a cymbal wash does
-                    not.
-                </p>
 
                 <h3>The signal chain</h3>
                 <ol class="doc-chain">
@@ -558,7 +464,7 @@
                     <dt>Key</dt>
                     <dd>The key the chroma analysis has settled on, or <i>Atonal</i> when no key stands clear of the alternatives &mdash; which is the honest answer for percussion, noise and a good deal of electronic music. It is deliberately slow: the correlations are averaged over several seconds before a decision is taken, so a passing chord cannot flip the reading.</dd>
                     <dt>Frame</dt>
-                    <dd>Render time and frame rate. If this drops in Sphere mode, lower the particle count &mdash; the value turns amber to say so. The other two modes have a fixed cost that does not depend on any control.</dd>
+                    <dd>Render time and frame rate. If this drops in Sphere mode, lower the particle count &mdash; the value turns amber to say so. Flare has a fixed cost that does not depend on any control.</dd>
                     <dt>Bass / Mid / Treb</dt>
                     <dd>The three values actually handed to the shader this frame, after smoothing and the limiter.</dd>
                     <dt>Profile</dt>
@@ -567,7 +473,7 @@
 
                 <h3>Keyboard</h3>
                 <table class="doc-keys">
-                    <tr><td>1&ndash;3</td><td>Pick a visualiser directly</td></tr>
+                    <tr><td>1</td><td>Pick a visualiser directly</td></tr>
                     <tr><td>V</td><td>Step through the visualisers (Shift+V goes back)</td></tr>
                     <tr><td>H</td><td>Hide or show all interface</td></tr>
                     <tr><td>F</td><td>Fullscreen</td></tr>

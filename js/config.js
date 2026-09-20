@@ -23,15 +23,7 @@ export const CONFIG = {
     autoRotate: true,
     autoRotateSpeed: 0.5,
     /** Which visualiser is on screen. Ids come from `visuals/modes.js`. */
-    mode: 'sphere',
-    /**
-     * Flight speed for the modes that move the camera through the scene, as a
-     * multiple of their natural rate. Terrain and Grid both derive that rate
-     * from the detected tempo, so this is a taste control on top of it.
-     */
-    speed: 1.0,
-    /** How long the membrane rings after a strike. */
-    damping: 0.5
+    mode: 'sphere'
 };
 
 /**

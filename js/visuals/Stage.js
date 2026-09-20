@@ -41,10 +41,10 @@ export class Stage {
          * The slider is the user's taste and applies everywhere; this is the
          * mode's own exposure. They are genuinely different quantities. The
          * sphere is mostly empty space, so bloom has little to catch and a
-         * strong setting reads as a glow around the points; the terrain and the
-         * membrane are filled surfaces covering half the screen, and the same
-         * setting turns them into one flat white sheet. Scaling here rather
-         * than in each shader keeps one number in the HUD meaning one thing.
+         * strong setting reads as a glow around the points; a filled surface
+         * covering half the screen would need far less before it turned into
+         * one flat white sheet. Scaling here rather than in each shader keeps
+         * one number in the HUD meaning one thing.
          */
         this.bloomScale = 1;
         this.bloomStrength = CONFIG.bloomStrength;

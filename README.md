@@ -3,15 +3,12 @@
 A GPU audio visualizer that reacts to system audio or microphone input, built on
 Three.js with custom shaders and bloom post-processing.
 
-Three visualisers share one analysis engine. They are not variations on a theme
-&mdash; each is built on a different part of what the engine produces, which is
-why they behave differently rather than merely looking different:
+Two visualisers, driven by one analysis engine:
 
 | | | |
 |---|---|---|
 | **Sphere** | the spectrum, now | A quarter-million points displaced by four audio-driven fields. No memory: every frame is drawn from that frame's audio. |
-| **Terrain** | the spectrum, over time | A scrolling heightfield with frequency on one axis and *time* on the other. The horizon is about six seconds ago. |
-| **Membrane** | the hits | A wave equation on a circular drumhead, struck by every detected onset. Ripples genuinely interfere and the rim genuinely reflects. |
+| **Flare** | a point of light, stared at | A blown-out core, corona, Airy rings, a squint bar and chromatic diffraction needles. Bass swells the core, treble crackles the rays, every onset flashes it. Instant attack, slow after-image release. |
 
 ## Running
 
@@ -50,17 +47,14 @@ js/
     VisualMode.js       The interface every visualiser implements
     modes.js            The registry: one row per visualiser
     ParticleSystem.js   Sphere mode: point cloud + shader material
-    SpectralTerrain.js  Terrain mode: ring-buffer history as a heightfield
-    Membrane.js         Membrane mode: wave equation on ping-pong render targets
+    Flare.js            Flare mode: half-res HDR light pass + full-res tonemap
     CameraShake.js      Beat-driven camera jitter (shared)
   shaders/
     particles.vert.js   Sphere vertex shader (audio-driven displacement)
     particles.frag.js   Sphere fragment shader (round point sprites)
-    terrain.vert.js     Terrain vertex shader (samples the history texture)
-    terrain.frag.js     Terrain fragment shader (slope-lit, frequency-coloured)
-    membrane.sim.js     One timestep of the 2D wave equation
-    membrane.vert.js    Membrane surface displacement + normals
-    membrane.frag.js    Membrane shading (wavefronts from slope)
+    flare.vert.js       Clip-space quad shared by both flare passes
+    flare.frag.js       Flare light pass (core, halo, rings, streak, needles)
+    flare.tonemap.js    Flare display pass (upsample, ACES, dither)
     noise.glsl.js       Reusable 3D simplex noise chunk
   ui/
     StartOverlay.js     Source-picker screen
@@ -86,9 +80,9 @@ visual axis in each mode.
 
 The visualiser picker sits at the top of the column as a list rather than a
 segmented control. Names alone would fit across 300px at this count, but each
-one needs a line of explanation to be worth anything &mdash; these modes react to
-genuinely different parts of the analysis, and "Terrain" tells you nothing on its
-own. Rows give that line somewhere to live, and leave room for the next one.
+one needs a line of explanation to be worth anything &mdash; a name alone tells
+you nothing about what a mode reacts to. Rows give that line somewhere to live,
+and leave room for the next one.
 
 Controls a mode does not use are **hidden rather than disabled**. A slider that
 cannot affect anything is furniture, not information. The three reactivity
@@ -231,15 +225,15 @@ passing chord.
   A mode owns whatever it adds to the scene and must give it all back on
   `dispose()` — geometries, materials, textures and render targets all hold GPU
   memory that garbage collection cannot reach. `VisualMode.dispose()` handles
-  anything added through `this.add()`; anything else is the mode's own problem
-  (see `Membrane`, which owns a private scene and a pair of render targets).
+  anything added through `this.add()`; anything else (private scenes, render
+  targets) is the mode's own problem.
 
 - **Bloom per mode** — the Bloom slider is the user's taste and applies
   everywhere; `view.bloomScale` is the mode's own exposure and multiplies into
   it. These are genuinely different quantities. The sphere is mostly empty
   space, so bloom has little to catch and a strong setting reads as a glow
-  around the points; the terrain and the membrane are filled surfaces covering
-  half the screen, and the same setting turns them into one flat white sheet.
+  around the points; a filled surface covering half the screen would need far
+  less before the same setting turned it into one flat white sheet.
 
 - **The three level controls** — Sensitivity is the auto-gain (or its manual
   override). Trim is a taste multiplier on top that auto-gain never fights, and
@@ -270,9 +264,7 @@ passing chord.
 
   One trap worth knowing: `PlaneGeometry` negates its vertical position while
   leaving the `v` coordinate alone, so on a plane laid flat with
-  `rotation.x = -PI/2`, `uv.y = 1` is the **far** edge. Terrain's time axis was
-  briefly inverted by exactly this, which put the newest spectrum on the horizon
-  and left the near edge showing six-second-old audio.
+  `rotation.x = -PI/2`, `uv.y = 1` is the **far** edge.
 - **New reactive band** — add a Hz range to `BANDS` in `config.js` and give it a
   weight in `BAND_GROUPS`, or read `bands.out[...]` directly in
   `AudioAnalyser.update()`.

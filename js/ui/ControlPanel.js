@@ -42,24 +42,11 @@ const SLIDERS = [
         id: 'rotate',
         prop: 'autoRotateSpeed',
         apply: (v, ctx) => ctx.stage.setAutoRotateSpeed(v)
-    },
-    {
-        id: 'speed',
-        prop: 'speed',
-        apply: (v, ctx) => ctx.visualizer.mode?.setSpeed(v)
-    },
-    {
-        id: 'damping',
-        prop: 'damping',
-        apply: (v, ctx) => ctx.visualizer.mode?.setDamping(v)
     }
 ];
 
 /** Controls that act on the shared analysis engine, so every mode has them. */
 const ENGINE_CONTROLS = ['sensitivity', 'trim', 'dynamics'];
-
-/** Blocks that only exist for some modes, and the group heading they sit under. */
-const MODE_GROUP = ['speed', 'damping'];
 
 /**
  * Owns the control column: the visualiser picker, slider wiring, the two
@@ -172,10 +159,6 @@ export class ControlPanel {
         // Trim has a second reason to be hidden, so it gets the last word.
         this.renderAutoSensitivity();
         this.renderAutoRotate();
-
-        const hasModeGroup = MODE_GROUP.some((id) => active.has(id));
-        document.getElementById('grp-mode').hidden = !hasModeGroup;
-        document.getElementById('rule-mode').hidden = !hasModeGroup;
     }
 
     // --- Sliders -------------------------------------------------------
