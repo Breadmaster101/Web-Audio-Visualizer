@@ -10,6 +10,7 @@ export class StartOverlay {
 
     hide() {
         this.element.classList.add('hidden');
+        document.body.classList.add('started');
     }
 
     get isHidden() {

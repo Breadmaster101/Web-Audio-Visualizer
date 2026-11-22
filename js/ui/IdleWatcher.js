@@ -1,74 +1,83 @@
-const IDLE_DELAY = 6000;
+const IDLE_DELAY = 3000;
 
 /**
- * Fades the chrome away after a period of no input.
+ * Hides the bar after the cursor has been still for `idleDelay`, and at once
+ * when the cursor leaves the page.
  *
- * Three things suppress it, all for the same reason: the interface must never
- * disappear out from under someone who is using it. It stays while the pointer
- * is over a panel (you are reading, and reading does not move the mouse), while
- * a control is being dragged, and while focus is inside the HUD. It also stays
- * until the start overlay is gone, so the source buttons cannot hide themselves.
+ * Two things hold it open, both so it never vanishes out from under someone
+ * using it: the pointer resting on the bar, and a slider drag in progress
+ * (pointer capture means no mousemove reaches the window during a drag, so a
+ * slow one would otherwise time out). Nothing happens until the start screen
+ * is gone, since the bar is not shown before then.
  */
 export class IdleWatcher {
     constructor(startOverlay, panels, idleDelay = IDLE_DELAY) {
         this.startOverlay = startOverlay;
+        this.panels = panels;
         this.idleDelay = idleDelay;
         this.timer = null;
         this.body = document.body;
         this.pointerInside = false;
         this.interacting = false;
 
-        const reset = () => this.reset();
-        window.addEventListener('mousemove', reset);
-        window.addEventListener('click', reset);
-        window.addEventListener('touchstart', reset);
-        window.addEventListener('keydown', reset);
-        window.addEventListener('wheel', reset, { passive: true });
+        const wake = () => this.wake();
+        window.addEventListener('mousemove', wake);
+        window.addEventListener('touchstart', wake);
+        window.addEventListener('keydown', wake);
+        window.addEventListener('wheel', wake, { passive: true });
+
+        // `mouseleave` on the root fires when the cursor leaves the page, which
+        // covers moving to another window, the tab strip or another monitor.
+        document.documentElement.addEventListener('mouseleave', () => {
+            this.pointerInside = false;
+            if (!this.interacting) this.sleep();
+        });
 
         for (const panel of panels) {
             panel.addEventListener('mouseenter', () => {
                 this.pointerInside = true;
-                this.reset();
+                this.wake();
             });
             panel.addEventListener('mouseleave', () => {
                 this.pointerInside = false;
-                this.reset();
+                this.wake();
             });
-            panel.addEventListener('scroll', reset, { passive: true });
         }
 
-        // Pointer capture on a slider means no further mousemove reaches the
-        // window, so a slow drag would otherwise time out mid-adjustment.
         window.addEventListener('pointerdown', () => {
             this.interacting = true;
-            this.reset();
+            this.wake();
         });
         window.addEventListener('pointerup', () => {
             this.interacting = false;
-            this.reset();
+            this.wake();
         });
 
-        this.panels = panels;
-        reset();
+        this.wake();
     }
 
     get isHeld() {
-        return this.pointerInside
-            || this.interacting
-            || this.panels.some((panel) => panel.contains(document.activeElement));
+        return this.pointerInside || this.interacting;
     }
 
-    reset() {
+    wake() {
         this.body.classList.remove('ui-idle');
         clearTimeout(this.timer);
-        this.timer = setTimeout(() => {
-            if (this.startOverlay.isHidden && !this.isHeld) {
-                this.body.classList.add('ui-idle');
-            } else {
-                // Held open. Re-arm rather than give up, so the fade still
-                // happens once the hold ends even if no further input arrives.
-                this.reset();
-            }
-        }, this.idleDelay);
+        this.timer = setTimeout(() => this.onTimeout(), this.idleDelay);
+    }
+
+    onTimeout() {
+        // Held open: re-arm rather than give up, so the fade still happens once
+        // the hold ends even if no further input arrives.
+        if (!this.startOverlay.isHidden || this.isHeld) {
+            this.wake();
+            return;
+        }
+        this.sleep();
+    }
+
+    sleep() {
+        clearTimeout(this.timer);
+        if (this.startOverlay.isHidden) this.body.classList.add('ui-idle');
     }
 }

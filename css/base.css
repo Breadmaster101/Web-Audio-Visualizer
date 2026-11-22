@@ -68,6 +68,8 @@ body.ui-idle {
     cursor: none;
 }
 
+/* The bar only exists once a source is picked; before that it is the start screen. */
+body:not(.started) .ui-layer,
 body.ui-idle .ui-layer,
 body.ui-hidden .ui-layer {
     opacity: 0;

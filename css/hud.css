@@ -7,12 +7,27 @@
  * a row of buttons.
  */
 
-/* Shared by the bar and the start card. */
+/*
+ * Colours for the bar. Brighter than the old HUD's, because the bar sits over
+ * the visualiser itself rather than over a near-opaque scrim: dark grey text
+ * and #2e2e2e rules vanish against a lit, blurred particle field.
+ */
+:root {
+    --hud-rule: rgba(255, 255, 255, 0.22);
+    --hud-label: #a8a8a8;
+    --hud-idle: #d0d0d0;
+}
+
+/*
+ * Shared by the bar and the start card. Mostly opaque with a light blur: the
+ * blur is there to soften what shows through, not to show it, and a strong
+ * one turns a bright scene into a coloured wash the text has to compete with.
+ */
 .glass {
-    background: rgba(0, 0, 0, 0.45);
-    border: 1px solid var(--rule);
-    -webkit-backdrop-filter: blur(16px) saturate(140%);
-    backdrop-filter: blur(16px) saturate(140%);
+    background: rgba(0, 0, 0, 0.72);
+    border: 1px solid var(--hud-rule);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
 }
 
 #hud {
@@ -37,7 +52,7 @@
 }
 
 .hud-cell + .hud-cell {
-    border-left: 1px solid var(--rule);
+    border-left: 1px solid var(--hud-rule);
 }
 
 .hud-label {
@@ -45,7 +60,7 @@
     font-weight: 700;
     letter-spacing: 2px;
     text-transform: uppercase;
-    color: var(--dim);
+    color: var(--hud-label);
 }
 
 /*
@@ -75,8 +90,8 @@
 
 .seg-btn {
     background: transparent;
-    color: var(--dim);
-    border: 1px solid var(--rule);
+    color: var(--hud-idle);
+    border: 1px solid var(--hud-rule);
     padding: 4px 10px;
     font-family: inherit;
     font-size: 9px;
@@ -93,6 +108,7 @@
 
 .seg-btn:hover {
     color: var(--fg);
+    border-color: var(--hud-label);
 }
 
 .seg-btn:focus-visible,
@@ -114,7 +130,7 @@
     padding: 2px;
     display: flex;
     align-items: center;
-    color: var(--muted);
+    color: var(--hud-idle);
     cursor: pointer;
 }
 
@@ -162,8 +178,8 @@ input[type=range]::-webkit-slider-runnable-track {
         to right,
         var(--fg) 0%,
         var(--fg) var(--fill, 0%),
-        var(--rule) var(--fill, 0%),
-        var(--rule) 100%
+        var(--hud-rule) var(--fill, 0%),
+        var(--hud-rule) 100%
     );
 }
 
@@ -180,7 +196,7 @@ input[type=range]::-webkit-slider-thumb {
 
 input[type=range]::-moz-range-track {
     height: 1px;
-    background: var(--rule);
+    background: var(--hud-rule);
 }
 
 input[type=range]::-moz-range-progress {
@@ -224,8 +240,8 @@ input[type=range]::-moz-range-thumb {
         justify-content: center;
         padding: 8px 12px;
         border: none;
-        border-top: 1px solid var(--rule);
-        border-left: 1px solid var(--rule);
+        border-top: 1px solid var(--hud-rule);
+        border-left: 1px solid var(--hud-rule);
         margin: -1px 0 0 -1px;
     }
 
