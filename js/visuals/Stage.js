@@ -36,15 +36,9 @@ export class Stage {
         this.controls.autoRotate = CONFIG.autoRotate;
 
         /**
-         * How much of the Bloom setting this mode actually wants.
-         *
-         * The slider is the user's taste and applies everywhere; this is the
-         * mode's own exposure. They are genuinely different quantities. The
-         * sphere is mostly empty space, so bloom has little to catch and a
-         * strong setting reads as a glow around the points; a filled surface
-         * covering half the screen would need far less before it turned into
-         * one flat white sheet. Scaling here rather than in each shader keeps
-         * one number in the HUD meaning one thing.
+         * How much of `CONFIG.bloomStrength` this mode wants. The sphere is
+         * mostly empty space, so bloom has little to catch; a filled frame
+         * needs far less before it turns into one flat white sheet.
          */
         this.bloomScale = 1;
         this.bloomStrength = CONFIG.bloomStrength;
@@ -67,26 +61,16 @@ export class Stage {
         this.composer.setSize(window.innerWidth, window.innerHeight);
     }
 
-    setBloomStrength(value) {
-        this.bloomStrength = value;
-        this.bloomPass.strength = value * this.bloomScale;
-    }
-
     setBloomScale(scale) {
         this.bloomScale = scale;
         this.bloomPass.strength = this.bloomStrength * scale;
-    }
-
-    setAutoRotate(enabled) {
-        this.controls.autoRotate = enabled && this.allowAutoRotate;
     }
 
     /**
      * Point the camera the way a mode wants it.
      *
      * Called on every mode switch, including the first. `autoRotate` here is the
-     * mode's *permission*, not the user's setting — a mode that denies it keeps
-     * the preference intact so it comes back when they switch to one that does.
+     * mode's permission to rotate; `CONFIG.autoRotate` is always on.
      */
     applyView({ position, target, autoRotate = true, bloomScale = 1 }) {
         this.camera.position.set(...position);
@@ -95,10 +79,6 @@ export class Stage {
         this.allowAutoRotate = autoRotate;
         this.controls.autoRotate = CONFIG.autoRotate && autoRotate;
         this.controls.update();
-    }
-
-    setAutoRotateSpeed(value) {
-        this.controls.autoRotateSpeed = value;
     }
 
     /** True while the user is actively dragging the camera. */

@@ -49,11 +49,8 @@ export class VisualMode {
      */
     setTime(time, dt) {}
 
-    /** 0.1..5. Each mode maps this into whatever "brighter" means for it. */
+    /** Set from the mode's registry entry. Each mode maps it its own way. */
     setBrightness(value) {}
-
-    /** Sphere mode's point budget. Ignored by modes that do not draw points. */
-    setCount(count) {}
 
     /** Free every GPU resource this mode allocated. */
     dispose() {

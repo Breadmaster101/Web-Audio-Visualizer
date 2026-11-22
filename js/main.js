@@ -11,10 +11,7 @@ const overlay = new StartOverlay({
     onStart: (name) => app.startAudio(name)
 });
 
-new IdleWatcher(overlay, [
-    document.getElementById('hud-controls'),
-    document.getElementById('hud-telemetry')
-]);
+new IdleWatcher(overlay, [document.getElementById('hud')]);
 
 new Shortcuts(app.controls);
 

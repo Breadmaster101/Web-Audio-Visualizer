@@ -7,9 +7,7 @@ import { particlesFragmentShader } from '../shaders/particles.frag.js';
 /**
  * Sphere mode: a sphere of points displaced by audio-driven fields.
  *
- * The full `maxParticles` buffer is allocated once when the mode is built; the
- * particle-count slider only moves the draw range, so changing it costs nothing
- * at runtime.
+ * The point count is fixed at `CONFIG.particles`.
  */
 export class ParticleSystem extends VisualMode {
     constructor(stage) {
@@ -26,7 +24,7 @@ export class ParticleSystem extends VisualMode {
         const sizes = [];
         const r = 4;
 
-        for (let i = 0; i < CONFIG.maxParticles; i++) {
+        for (let i = 0; i < CONFIG.particles; i++) {
             // Uniform distribution over the sphere surface.
             const theta = Math.random() * Math.PI * 2;
             const phi = Math.acos((Math.random() * 2) - 1);
@@ -40,7 +38,6 @@ export class ParticleSystem extends VisualMode {
 
         geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
         geometry.setAttribute('aSize', new THREE.Float32BufferAttribute(sizes, 1));
-        geometry.setDrawRange(0, CONFIG.initialParticles);
         return geometry;
     }
 
@@ -54,7 +51,7 @@ export class ParticleSystem extends VisualMode {
                 uBeat: { value: 0 },
                 uPulse: { value: 0 },
                 uTilt: { value: 0.5 },
-                uBrightness: { value: CONFIG.brightness }
+                uBrightness: { value: 1 }
             },
             vertexShader: particlesVertexShader,
             fragmentShader: particlesFragmentShader,
@@ -62,10 +59,6 @@ export class ParticleSystem extends VisualMode {
             depthWrite: false,
             blending: THREE.AdditiveBlending
         });
-    }
-
-    setCount(count) {
-        this.points.geometry.setDrawRange(0, count);
     }
 
     setBrightness(value) {

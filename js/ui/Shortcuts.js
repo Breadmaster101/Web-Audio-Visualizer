@@ -3,11 +3,11 @@
  *
  * `H` is a deliberate hide and is tracked separately from the idle fade, so
  * moving the mouse does not undo it — the two states are independent classes on
- * <body> and either one is enough to take the chrome away.
+ * <body> and either one is enough to take the bar away.
  *
- * The digits pick a visualiser directly and `V` steps through them. Both exist
- * because the picker is the one control worth reaching for with the interface
- * hidden, which is how the app is meant to be watched.
+ * The digits pick a visualiser directly and `V` steps through them, so modes
+ * can be switched with the bar hidden, which is how the app is meant to be
+ * watched.
  */
 export class Shortcuts {
     constructor(controls) {
@@ -35,24 +35,14 @@ export class Shortcuts {
                 this.controls.toggleAutoSensitivity();
                 break;
 
-            case 'r':
-            case 'R':
-                this.controls.reset();
-                break;
-
             case 'v':
             case 'V':
                 this.controls.cycleMode(event.shiftKey ? -1 : 1);
                 break;
 
-            case '?':
-                this.controls.toggleDoc();
-                break;
-
             default:
                 // Digits pick a visualiser by position. Anything past the end of
-                // the list falls through and is ignored rather than wrapping,
-                // which would make 9 mean something arbitrary.
+                // the list is ignored rather than wrapping.
                 if (event.key >= '1' && event.key <= '9') {
                     this.controls.selectModeAt(Number(event.key) - 1);
                     break;
@@ -60,8 +50,8 @@ export class Shortcuts {
                 return;
         }
 
-        // Only reached when a key was actually handled, so arrow keys and tab
-        // keep working normally on a focused slider.
+        // Only reached when a key was handled, so arrow keys keep working on a
+        // focused slider.
         event.preventDefault();
     }
 }

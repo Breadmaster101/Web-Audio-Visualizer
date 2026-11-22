@@ -1,15 +1,16 @@
+/*
+ * Start screen. The visualiser is already running behind it in its idle state,
+ * so the overlay itself is clear and only the card is frosted.
+ */
 #start-overlay {
     position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
+    inset: 0;
     z-index: 100;
     display: flex;
-    flex-direction: column;
     justify-content: center;
     align-items: center;
-    background: var(--bg);
+    padding: 16px;
+    box-sizing: border-box;
     transition: opacity 0.5s ease;
 }
 
@@ -18,15 +19,30 @@
     pointer-events: none;
 }
 
+.start-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 36px 40px 30px;
+    max-width: 100%;
+    box-sizing: border-box;
+    text-align: center;
+}
+
+.start-card h1 {
+    margin: 0 0 28px;
+}
+
 .btn-group {
     display: flex;
-    gap: 15px;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 12px;
 }
 
 .overlay-hint {
-    margin-top: 20px;
+    margin: 22px 0 0;
     font-size: 10px;
+    letter-spacing: 1px;
     color: var(--dim);
-    text-align: center;
-    line-height: 1.6;
 }

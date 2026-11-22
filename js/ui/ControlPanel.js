@@ -1,117 +1,54 @@
 import { CONFIG } from '../config.js';
 import { MODES, DEFAULT_MODE, findMode } from '../visuals/modes.js';
-import { EngineReadout } from './EngineReadout.js';
 import { Settings } from './Settings.js';
 
-/**
- * Declarative description of every slider.
- *
- * `id` names both the input (`inp-<id>`) and its value readout (`val-<id>`), and
- * also the block that wraps them (`ctl-<id>`), which is what lets a mode's
- * `controls` list decide what the column shows.
- *
- * Defaults are not repeated here: the `value` attribute in the markup is the
- * single source of truth, read back through `slider.defaultValue`, so a reset
- * cannot drift out of step with what the page ships.
- *
- * `apply` reaches the live mode through `ctx.visualizer.mode`, resolved at call
- * time rather than captured. The mode object is replaced on every switch, and a
- * captured reference would keep pushing values into a disposed one.
- */
-const SLIDERS = [
-    {
-        id: 'particles',
-        format: (v) => v.toLocaleString('en-US'),
-        apply: (v, ctx) => ctx.visualizer.mode?.setCount(v)
-    },
-    {
-        id: 'brightness',
-        prop: 'brightness',
-        apply: (v, ctx) => ctx.visualizer.mode?.setBrightness(v)
-    },
-    {
-        id: 'bloom',
-        prop: 'bloomStrength',
-        apply: (v, ctx) => ctx.stage.setBloomStrength(v)
-    },
-    { id: 'sensitivity', prop: 'sensitivity' },
-    { id: 'trim', prop: 'trim' },
-    { id: 'dynamics', prop: 'loudnessFollow' },
-    { id: 'shake', prop: 'shake' },
-    {
-        id: 'rotate',
-        prop: 'autoRotateSpeed',
-        apply: (v, ctx) => ctx.stage.setAutoRotateSpeed(v)
-    }
-];
-
-/** Controls that act on the shared analysis engine, so every mode has them. */
-const ENGINE_CONTROLS = ['sensitivity', 'trim', 'dynamics'];
+/** Text is only legible if it holds still; refresh it a few times a second. */
+const TEXT_INTERVAL = 0.15;
 
 /**
- * Owns the control column: the visualiser picker, slider wiring, the two
- * toggles, the audio source selector, the how-it-works section, and persistence
- * for all of it.
+ * Owns the floating bar: visualiser picker, audio source, tempo readout,
+ * sensitivity (auto or manual), and fullscreen.
+ *
+ * Everything else the app used to expose is fixed in `config.js` and
+ * `visuals/modes.js`. Only the visualiser and the sensitivity choice persist.
  */
 export class ControlPanel {
     constructor({ visualizer, stage, audio, onModeChange }) {
         this.ctx = { visualizer, stage, audio };
         this.onModeChange = onModeChange;
         this.settings = new Settings();
-        this.sliders = new Map();
-
-        for (const spec of SLIDERS) this.bindSlider(spec);
+        this.elapsed = TEXT_INTERVAL;
 
         this.setupModes();
-        this.setupAutoSensitivity();
-        this.setupAutoRotate();
-        this.setupChromatic();
+        this.setupSensitivity();
         this.setupSource();
-        this.setupDoc();
         this.setupFullscreen();
 
-        this.readout = new EngineReadout();
-        this.particlesValue = document.getElementById('val-particles');
+        this.bpmValue = document.getElementById('val-bpm');
     }
 
     // --- Visualiser picker ---------------------------------------------
 
     /**
-     * Build the picker from the registry, so adding a mode needs no markup.
-     *
-     * The stored id is validated against the registry rather than trusted:
-     * whatever is in storage was written by an older version of this app, and a
-     * mode that has since been renamed or removed would otherwise leave the
-     * picker pointing at nothing.
+     * Built from the registry, so adding a mode needs no markup. The stored id
+     * is validated rather than trusted, since a mode may have been renamed or
+     * removed since it was saved.
      */
     setupModes() {
-        this.modeList = document.getElementById('mode-list');
+        const list = document.getElementById('mode-list');
         this.modeButtons = new Map();
 
         for (const [index, mode] of MODES.entries()) {
             const button = document.createElement('button');
-            button.className = 'mode-btn';
+            button.className = 'seg-btn';
             button.type = 'button';
             button.setAttribute('role', 'radio');
             button.setAttribute('aria-checked', 'false');
-            button.dataset.mode = mode.id;
-
-            const name = document.createElement('span');
-            name.className = 'mode-name';
-            name.textContent = mode.label;
-
-            const key = document.createElement('span');
-            key.className = 'mode-key';
-            key.textContent = String(index + 1);
-
-            const tag = document.createElement('span');
-            tag.className = 'mode-tag';
-            tag.textContent = mode.tagline;
-
-            button.append(name, key, tag);
+            button.title = `${mode.label} (${index + 1})`;
+            button.textContent = mode.label;
             button.addEventListener('click', () => this.selectMode(mode.id));
 
-            this.modeList.append(button);
+            list.append(button);
             this.modeButtons.set(mode.id, button);
         }
 
@@ -135,175 +72,76 @@ export class ControlPanel {
         if (index >= 0 && index < MODES.length) this.selectMode(MODES[index].id);
     }
 
-    /**
-     * Re-point the column at a newly built mode.
-     *
-     * Two jobs. Controls the mode does not use are hidden — a slider that cannot
-     * affect anything is furniture, not information. And every control it does
-     * use is replayed into it, because the mode was constructed from CONFIG
-     * defaults and knows nothing about where the sliders are sitting.
-     */
+    /** Called by the visualiser once a mode has been built. */
     applyMode(spec) {
-        for (const button of this.modeButtons.values()) {
-            button.setAttribute('aria-checked', String(button.dataset.mode === spec.id));
+        for (const [id, button] of this.modeButtons) {
+            button.setAttribute('aria-checked', String(id === spec.id));
         }
-
-        const active = new Set([...spec.controls, ...ENGINE_CONTROLS]);
-
-        for (const [id, entry] of this.sliders) {
-            const block = document.getElementById(`ctl-${id}`);
-            const shown = active.has(id);
-            if (block) block.hidden = !shown;
-            if (shown && entry.spec.apply) entry.spec.apply(parseFloat(entry.slider.value), this.ctx);
-        }
-
-        // The one control with no slider behind it.
-        this.chromaticRow.hidden = !active.has('chromatic');
-        this.renderChromatic();
-
-        // Trim has a second reason to be hidden, so it gets the last word.
-        this.renderAutoSensitivity();
-        this.renderAutoRotate();
     }
 
-    // --- Sliders -------------------------------------------------------
-
-    bindSlider(spec) {
-        const slider = document.getElementById(`inp-${spec.id}`);
-        const readout = document.getElementById(`val-${spec.id}`);
-        const digits = spec.id === 'particles' ? 0 : 2;
-        const format = spec.format || ((v) => v.toFixed(digits));
-
-        const entry = { spec, slider, readout, format };
-        this.sliders.set(spec.id, entry);
-
-        slider.addEventListener('input', () => {
-            this.commit(entry, parseFloat(slider.value));
-            this.settings.set(spec.id, parseFloat(slider.value));
-        });
-
-        const stored = this.settings.get(spec.id, parseFloat(slider.defaultValue));
-        this.commit(entry, this.sanitise(slider, stored));
-    }
+    // --- Sensitivity ---------------------------------------------------
 
     /**
-     * A stored value can be out of range or not a number at all — the markup's
-     * min/max may have changed since it was written. Clamp rather than discard,
-     * so a narrowed range keeps the user near where they left off.
+     * Auto hands the gain to the analysis engine and the readout shows what it
+     * settled on. Manual reveals a slider that starts from that value, so the
+     * handover never jumps.
      */
-    sanitise(slider, value) {
-        const number = parseFloat(value);
-        if (!Number.isFinite(number)) return parseFloat(slider.defaultValue);
-        return Math.min(Math.max(number, parseFloat(slider.min)), parseFloat(slider.max));
-    }
-
-    /** Push a value into the DOM, CONFIG and the visuals. Does not persist. */
-    commit(entry, value) {
-        const { spec, slider, readout, format } = entry;
-        slider.value = value;
-        if (readout) readout.textContent = format(value);
-        if (spec.prop) CONFIG[spec.prop] = value;
-        if (spec.apply) spec.apply(value, this.ctx);
-        this.paint(entry);
-    }
-
-    /**
-     * Repaints the filled portion of the track. WebKit has no equivalent of
-     * Firefox's ::-moz-range-progress, so the fill is a gradient stop driven by
-     * a custom property instead.
-     */
-    paint({ slider }) {
-        const min = parseFloat(slider.min);
-        const max = parseFloat(slider.max);
-        const fraction = max > min ? (parseFloat(slider.value) - min) / (max - min) : 0;
-        slider.style.setProperty('--fill', `${(fraction * 100).toFixed(2)}%`);
-    }
-
-    // --- Toggles -------------------------------------------------------
-
-    /**
-     * Auto mode hands the gain to the analysis engine and turns the slider into
-     * a live display of what it settled on. Switching back to manual adopts
-     * that value, so the handover never jumps.
-     *
-     * Trim only exists because auto-gain would cancel out a change made with
-     * the Sensitivity slider. With Auto off there is nothing to work around —
-     * Sensitivity does the same job directly — so the control is taken away
-     * rather than left sitting there as a second, redundant gain.
-     */
-    setupAutoSensitivity() {
+    setupSensitivity() {
         this.autoButton = document.getElementById('btn-auto-sensitivity');
-        this.trimRow = document.getElementById('ctl-trim');
-        const entry = this.sliders.get('sensitivity');
+        this.slider = document.getElementById('inp-sensitivity');
+        this.sensValue = document.getElementById('val-sensitivity');
 
         CONFIG.autoSensitivity = this.settings.get('autoSensitivity', true) !== false;
+        CONFIG.sensitivity = this.clampSensitivity(
+            this.settings.get('sensitivity', CONFIG.sensitivity)
+        );
+        this.showSensitivity(CONFIG.sensitivity);
 
-        this.renderAutoSensitivity = () => {
-            this.autoButton.setAttribute('aria-pressed', String(CONFIG.autoSensitivity));
-            entry.slider.disabled = CONFIG.autoSensitivity;
-            this.trimRow.hidden = !CONFIG.autoSensitivity;
-        };
+        this.slider.addEventListener('input', () => {
+            CONFIG.sensitivity = parseFloat(this.slider.value);
+            this.showSensitivity(CONFIG.sensitivity);
+            this.settings.set('sensitivity', CONFIG.sensitivity);
+        });
 
         this.autoButton.addEventListener('click', () => this.toggleAutoSensitivity());
-        this.renderAutoSensitivity();
+        this.renderSensitivity();
+    }
+
+    /** Stored values may predate the current range, or not be numbers at all. */
+    clampSensitivity(value) {
+        const number = parseFloat(value);
+        const min = parseFloat(this.slider.min);
+        const max = parseFloat(this.slider.max);
+        if (!Number.isFinite(number)) return parseFloat(this.slider.defaultValue);
+        return Math.min(Math.max(number, min), max);
     }
 
     toggleAutoSensitivity() {
         CONFIG.autoSensitivity = !CONFIG.autoSensitivity;
         if (!CONFIG.autoSensitivity) {
-            CONFIG.sensitivity = parseFloat(this.sliders.get('sensitivity').slider.value);
+            // Adopt whatever Auto had reached, so switching does not jump.
+            CONFIG.sensitivity = this.clampSensitivity(this.ctx.audio.metrics.gain);
+            this.showSensitivity(CONFIG.sensitivity);
+            this.settings.set('sensitivity', CONFIG.sensitivity);
         }
         this.settings.set('autoSensitivity', CONFIG.autoSensitivity);
-        this.renderAutoSensitivity();
+        this.renderSensitivity();
     }
 
-    setupAutoRotate() {
-        this.rotateButton = document.getElementById('btn-auto-rotate');
-        const entry = this.sliders.get('rotate');
-
-        CONFIG.autoRotate = this.settings.get('autoRotate', true) !== false;
-
-        this.renderAutoRotate = () => {
-            this.rotateButton.setAttribute('aria-pressed', String(CONFIG.autoRotate));
-            this.rotateButton.textContent = CONFIG.autoRotate ? 'On' : 'Off';
-            entry.slider.disabled = !CONFIG.autoRotate;
-            this.ctx.stage.setAutoRotate(CONFIG.autoRotate);
-        };
-
-        this.rotateButton.addEventListener('click', () => {
-            CONFIG.autoRotate = !CONFIG.autoRotate;
-            this.settings.set('autoRotate', CONFIG.autoRotate);
-            this.renderAutoRotate();
-        });
-
-        this.renderAutoRotate();
+    renderSensitivity() {
+        const auto = CONFIG.autoSensitivity;
+        this.autoButton.setAttribute('aria-pressed', String(auto));
+        this.autoButton.textContent = auto ? 'Auto' : 'Manual';
+        this.slider.hidden = auto;
     }
 
-    /**
-     * Flare's colour split. A plain on/off with no slider under it: the amount
-     * of dispersion is tied to the treble, and a second knob on top of that
-     * would only fight it.
-     */
-    setupChromatic() {
-        this.chromaticButton = document.getElementById('btn-chromatic');
-        this.chromaticRow = document.getElementById('ctl-chromatic');
-
-        CONFIG.chromaticAberration = this.settings.get('chromaticAberration', true) !== false;
-
-        this.renderChromatic = () => {
-            this.chromaticButton.setAttribute('aria-pressed', String(CONFIG.chromaticAberration));
-            this.chromaticButton.textContent = CONFIG.chromaticAberration ? 'On' : 'Off';
-            this.ctx.visualizer.mode?.setChromaticAberration?.(CONFIG.chromaticAberration);
-        };
-
-        this.chromaticButton.addEventListener('click', () => this.toggleChromatic());
-        this.renderChromatic();
-    }
-
-    toggleChromatic() {
-        CONFIG.chromaticAberration = !CONFIG.chromaticAberration;
-        this.settings.set('chromaticAberration', CONFIG.chromaticAberration);
-        this.renderChromatic();
+    showSensitivity(value) {
+        this.slider.value = value;
+        this.sensValue.textContent = value.toFixed(2);
+        const min = parseFloat(this.slider.min);
+        const max = parseFloat(this.slider.max);
+        const fraction = (value - min) / (max - min);
+        this.slider.style.setProperty('--fill', `${(fraction * 100).toFixed(2)}%`);
     }
 
     // --- Audio source --------------------------------------------------
@@ -333,30 +171,7 @@ export class ControlPanel {
         this.renderSource();
     }
 
-    // --- How it works --------------------------------------------------
-
-    setupDoc() {
-        this.docButton = document.getElementById('btn-how');
-        this.docBody = document.getElementById('doc-body');
-
-        this.docButton.addEventListener('click', () => this.toggleDoc());
-
-        if (this.settings.get('docOpen', false) === true) this.setDoc(true);
-    }
-
-    setDoc(open) {
-        this.docButton.setAttribute('aria-expanded', String(open));
-        this.docBody.hidden = !open;
-        this.settings.set('docOpen', open);
-    }
-
-    toggleDoc() {
-        this.setDoc(this.docButton.getAttribute('aria-expanded') !== 'true');
-        // Opening from the keyboard should actually show the thing it opened.
-        if (!this.docBody.hidden) {
-            this.docButton.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
-    }
+    // --- Fullscreen ----------------------------------------------------
 
     setupFullscreen() {
         document.getElementById('fullscreen-btn')
@@ -371,38 +186,22 @@ export class ControlPanel {
         }
     }
 
-    /** Restore every control to the value the markup ships with. */
-    reset() {
-        this.settings.clear();
+    // --- Live readout --------------------------------------------------
 
-        for (const entry of this.sliders.values()) {
-            this.commit(entry, parseFloat(entry.slider.defaultValue));
-        }
-
-        if (!CONFIG.autoSensitivity) this.toggleAutoSensitivity();
-        if (!CONFIG.autoRotate) this.rotateButton.click();
-        if (!CONFIG.chromaticAberration) this.toggleChromatic();
-        this.setDoc(false);
-
-        // Last, because switching modes replays the sliders into the new one and
-        // there is no sense doing that twice.
-        if (CONFIG.mode !== DEFAULT_MODE) this.onModeChange(DEFAULT_MODE);
-
-        // The steps above re-persist as they go, so clear once more to leave
-        // storage genuinely empty.
-        this.settings.clear();
-    }
-
-    /** Called every frame; the readout throttles itself. */
+    /** Called every frame; throttles its own text updates. */
     reportMetrics(metrics, isReady, deltaTime) {
-        if (CONFIG.autoSensitivity && isReady) {
-            const entry = this.sliders.get('sensitivity');
-            entry.slider.value = metrics.gain;
-            entry.readout.textContent = metrics.gain.toFixed(2);
-            this.paint(entry);
+        this.elapsed += deltaTime;
+        if (this.elapsed < TEXT_INTERVAL) return;
+        this.elapsed = 0;
+
+        if (!isReady) {
+            this.bpmValue.textContent = '—';
+            return;
         }
 
-        this.readout.update(metrics, isReady, deltaTime);
-        this.particlesValue.classList.toggle('warn', this.readout.isFrameSlow);
+        // Tempo is only worth showing once the tracker agrees with itself.
+        this.bpmValue.textContent = metrics.bpm ? `${Math.round(metrics.bpm)} BPM` : 'Searching';
+
+        if (CONFIG.autoSensitivity) this.showSensitivity(metrics.gain);
     }
 }

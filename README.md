@@ -7,7 +7,7 @@ Two visualisers, driven by one analysis engine:
 
 | | | |
 |---|---|---|
-| **Sphere** | the spectrum, now | A quarter-million points displaced by four audio-driven fields. No memory: every frame is drawn from that frame's audio. |
+| **Sphere** | the spectrum, now | A million points displaced by four audio-driven fields. No memory: every frame is drawn from that frame's audio. |
 | **Flare** | a point of light, stared at | A blown-out core, corona, Airy rings, a squint bar and chromatic diffraction needles. Bass swells the core, treble crackles the rays, every onset flashes it. Instant attack, slow after-image release. |
 
 ## Running
@@ -28,7 +28,7 @@ index.html              Markup only — links stylesheets and boots js/main.js
 css/
   base.css              Variables, body, canvas, shared button + idle-fade rules
   overlay.css           Start screen
-  hud.css               Edge HUD: control column and telemetry panel
+  hud.css               The floating control bar
 js/
   main.js               Entry point: builds the app and wires UI to it
   config.js             CONFIG tunables, BANDS in Hz, ANALYSIS constants
@@ -58,51 +58,40 @@ js/
     noise.glsl.js       Reusable 3D simplex noise chunk
   ui/
     StartOverlay.js     Source-picker screen
-    ControlPanel.js     Visualiser picker, sliders, toggles, source, persistence
-    EngineReadout.js    Live telemetry panel
-    Settings.js         localStorage persistence for control values
+    ControlPanel.js     The bar: visualiser, source, tempo, sensitivity, fullscreen
+    Settings.js         localStorage persistence for the visualiser and sensitivity
     Shortcuts.js        Keyboard bindings
     IdleWatcher.js      Fades chrome when the pointer rests
 ```
 
 ## The interface
 
-An edge HUD rather than a floating panel: controls and their documentation in a
-scrolling column flush against the left edge, live engine telemetry bottom
-right. Both sit on a flat scrim with a single hairline rule marking the inner
-edge, which keeps them legible over a bright particle field without becoming
-boxes floating on top of it.
+One bar floating above the bottom edge, on a blurred translucent background.
+It holds everything you can change or read:
 
-Every control carries a plain-language description of what it does, and the
-**How it works** section at the foot of the column holds the technical detail:
-the signal chain, the auto-sensitivity loop, and which audio value drives which
-visual axis in each mode.
+- **Sphere / Flare** picks the visualiser.
+- **System / Mic** picks the audio source.
+- **Tempo** shows the detected BPM, or *Searching* until the tracker is sure.
+- **Sens** shows the sensitivity the engine has settled on. **Auto** switches
+  to **Manual**, which shows a slider starting from that same value.
+- The last button toggles fullscreen.
 
-The visualiser picker sits at the top of the column as a list rather than a
-segmented control. Names alone would fit across 300px at this count, but each
-one needs a line of explanation to be worth anything &mdash; a name alone tells
-you nothing about what a mode reacts to. Rows give that line somewhere to live,
-and leave room for the next one.
-
-Controls a mode does not use are **hidden rather than disabled**. A slider that
-cannot affect anything is furniture, not information. The three reactivity
-controls are never hidden, because they act on the shared analysis engine and so
-apply everywhere.
+Everything else is fixed: the sphere draws 1,000,000 points at brightness
+0.10, bloom is 1.8, and the camera rotates slowly and shakes on the beat.
+Brightness is set per visualiser in `js/visuals/modes.js`; the rest is in
+`js/config.js`.
 
 | Key | |
 |-----|---|
-| `1`&ndash;`3` | Pick a visualiser directly |
+| `1`&ndash;`2` | Pick a visualiser directly |
 | `V` | Step through the visualisers (`Shift+V` goes back) |
-| `H` | Hide or show all interface |
+| `H` | Hide or show the bar |
 | `F` | Fullscreen |
 | `A` | Toggle auto sensitivity |
-| `R` | Reset every control to its default |
-| `?` | Open or close *How it works* |
 
-Control values are saved to `localStorage` and restored on reload; `R` clears
-them. The chrome fades after six seconds of no input, but never while the
-pointer is over a panel, a control is being dragged, or focus is inside the
-HUD.
+The chosen visualiser and the sensitivity setting are saved to `localStorage`.
+The bar fades after six seconds of no input, but never while the pointer is
+over it, a control is being dragged, or focus is inside it.
 
 ## The analysis engine
 
@@ -171,14 +160,14 @@ own sensitivity setting. Each frame runs this chain:
    song: the correct level would arrive multiplied by whatever the loop had
    wound itself up to in the meantime.
 
-   **Trim** scales the finished output and sits *outside* that loop. A control
+   **Trim** (fixed at 1.0) scales the finished output and sits *outside* that loop. A control
    folded in before the measurement would be regulated straight back out again
    within seconds — the loop holds what it can see. It scales limiter headroom
    too, so turning it up genuinely gets wilder rather than just hitting the
    ceiling sooner.
 
-8. **Dynamics** — how much of the music's own loudness variation survives all of
-   the above. Levelling is what lets any genre work, but applied to a single
+8. **Dynamics** (fixed at 0.6) — how much of the music's own loudness variation
+   survives all of the above. Levelling is what lets any genre work, but applied to a single
    song it also flattens the arrangement: every calibration window is a few
    seconds long, so a quiet verse refills the whole range shortly after it
    starts and ends up looking like the chorus.

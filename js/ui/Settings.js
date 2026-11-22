@@ -1,4 +1,4 @@
-const STORAGE_KEY = 'emoney-visualizer/v1';
+const STORAGE_KEY = 'emoney-visualizer/v2';
 
 /**
  * Persists control values to localStorage so a session survives a reload.

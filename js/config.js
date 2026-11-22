@@ -1,16 +1,18 @@
-/** Tunables shared across modules. Slider-backed values are mutated at runtime. */
+/**
+ * Tunables shared across modules. Only `sensitivity`, `autoSensitivity` and
+ * `mode` change at runtime; everything else is fixed. Brightness is per mode,
+ * in `visuals/modes.js`.
+ */
 export const CONFIG = {
-    maxParticles: 1000000,
-    initialParticles: 250000,
+    particles: 1000000,
     particleSize: 0.08,
     bloomStrength: 1.8,
     bloomRadius: 0.5,
     bloomThreshold: 0.1,
-    brightness: 0.8,
     /** Manual gain. Only consulted while `autoSensitivity` is off. */
     sensitivity: 1.0,
     autoSensitivity: true,
-    /** Taste control: scales the finished output, outside the auto-gain loop. */
+    /** Scales the finished output, outside the auto-gain loop. */
     trim: 1.0,
     /**
      * How much of the music's own loudness variation reaches the visuals.

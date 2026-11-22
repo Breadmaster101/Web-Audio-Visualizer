@@ -47,7 +47,7 @@ export class Flare extends VisualMode {
         super(stage);
 
         this.renderer = stage.renderer;
-        this.brightness = CONFIG.brightness;
+        this.brightness = 0.8;
 
         this.target = { intensity: IDLE.intensity, bass: 0, treble: 0 };
         this.smooth = { intensity: 0, bass: 0, treble: 0 };
@@ -174,8 +174,7 @@ export class Flare extends VisualMode {
 
         const u = this.lightMaterial.uniforms;
         u.uTime.value = time;
-        // The slider's default is the shader's tuned exposure; the rest of its
-        // range is headroom in both directions.
+        // 0.8 is the shader's tuned exposure.
         u.uIntensity.value = s.intensity * (this.brightness / 0.8);
         u.uBass.value = s.bass;
         u.uTreble.value = s.treble;

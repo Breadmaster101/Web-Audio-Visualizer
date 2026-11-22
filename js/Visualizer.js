@@ -51,8 +51,7 @@ export class Visualizer {
         // it or the first beat will yank the view back to the previous mode's.
         this.shake.syncRestPosition();
 
-        // A new mode starts at its own defaults and knows nothing about the
-        // slider positions, so every control that applies to it is replayed.
+        this.mode.setBrightness(spec.brightness);
         this.controls.applyMode(spec);
     }
 
