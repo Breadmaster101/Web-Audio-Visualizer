@@ -89,7 +89,9 @@ Brightness is set per visualiser in `js/visuals/modes.js`; the rest is in
 | `F` | Fullscreen |
 | `A` | Toggle auto sensitivity |
 
-The chosen visualiser and the sensitivity setting are saved to `localStorage`.
+The chosen visualiser and the sensitivity setting are saved to `localStorage`,
+along with the gain Auto last settled on, so the next session starts from there
+instead of climbing up from scratch.
 The bar fades after six seconds of no input, but never while the pointer is
 over it, a control is being dragged, or focus is inside it.
 

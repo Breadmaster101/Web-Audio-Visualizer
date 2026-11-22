@@ -1,9 +1,19 @@
-import { CONFIG } from '../config.js';
+import { CONFIG, ANALYSIS } from '../config.js';
 import { MODES, DEFAULT_MODE, findMode } from '../visuals/modes.js';
 import { Settings } from './Settings.js';
 
 /** Text is only legible if it holds still; refresh it a few times a second. */
 const TEXT_INTERVAL = 0.15;
+
+/**
+ * Where Auto starts before it has ever settled. The middle of its range, and
+ * above the old 1.00 on purpose: the loop lowers gain several times faster
+ * than it raises it, so starting high costs a few seconds, starting low a minute.
+ */
+const AUTO_GAIN_DEFAULT = (ANALYSIS.agcRange[0] + ANALYSIS.agcRange[1]) / 2;
+
+/** Seconds between saves of the gain Auto has reached. */
+const AUTO_SAVE_INTERVAL = 5;
 
 /**
  * Owns the floating bar: visualiser picker, audio source, tempo readout,
@@ -95,7 +105,18 @@ export class ControlPanel {
         CONFIG.sensitivity = this.clampSensitivity(
             this.settings.get('sensitivity', CONFIG.sensitivity)
         );
-        this.showSensitivity(CONFIG.sensitivity);
+
+        // Auto resumes from the gain it last settled on rather than from a
+        // fixed 1.00, so a new session does not spend its first minute
+        // climbing back to where the previous one already was.
+        this.autoGain = this.clampAutoGain(this.settings.get('autoGain', NaN));
+        this.lastAutoSave = 0;
+        this.ctx.audio.metrics.gain = CONFIG.autoSensitivity ? this.autoGain : CONFIG.sensitivity;
+        this.showSensitivity(this.ctx.audio.metrics.gain);
+        window.addEventListener('pagehide', () => {
+            this.saveAutoGain();
+            this.settings.flush();
+        });
 
         this.slider.addEventListener('input', () => {
             CONFIG.sensitivity = parseFloat(this.slider.value);
@@ -116,7 +137,25 @@ export class ControlPanel {
         return Math.min(Math.max(number, min), max);
     }
 
+    /** The auto loop's own range, with its midpoint for a first-ever run. */
+    clampAutoGain(value) {
+        const [min, max] = ANALYSIS.agcRange;
+        const number = parseFloat(value);
+        if (!Number.isFinite(number)) return AUTO_GAIN_DEFAULT;
+        return Math.min(Math.max(number, min), max);
+    }
+
+    /** Remember where Auto has got to, for the next session to start from. */
+    saveAutoGain() {
+        if (!CONFIG.autoSensitivity || !this.ctx.audio.isReady) return;
+        const gain = Math.round(this.ctx.audio.metrics.gain * 100) / 100;
+        if (gain === this.autoGain) return;
+        this.autoGain = gain;
+        this.settings.set('autoGain', gain);
+    }
+
     toggleAutoSensitivity() {
+        if (CONFIG.autoSensitivity) this.saveAutoGain();
         CONFIG.autoSensitivity = !CONFIG.autoSensitivity;
         if (!CONFIG.autoSensitivity) {
             // Adopt whatever Auto had reached, so switching does not jump.
@@ -190,6 +229,14 @@ export class ControlPanel {
 
     /** Called every frame; throttles its own text updates. */
     reportMetrics(metrics, isReady, deltaTime) {
+        // Throttled well below the settings debounce, which a write every few
+        // frames would keep resetting so that nothing ever reached storage.
+        this.lastAutoSave += deltaTime;
+        if (this.lastAutoSave >= AUTO_SAVE_INTERVAL) {
+            this.lastAutoSave = 0;
+            this.saveAutoGain();
+        }
+
         this.elapsed += deltaTime;
         if (this.elapsed < TEXT_INTERVAL) return;
         this.elapsed = 0;
