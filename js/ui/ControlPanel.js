@@ -30,6 +30,7 @@ export class ControlPanel {
         this.elapsed = TEXT_INTERVAL;
 
         this.setupModes();
+        this.setupInputs();
         this.setupSensitivity();
         this.setupSource();
         this.setupFullscreen();
@@ -87,6 +88,47 @@ export class ControlPanel {
         for (const [id, button] of this.modeButtons) {
             button.setAttribute('aria-checked', String(id === spec.id));
         }
+        // A mode's input is deliberately not remembered: every visit starts on
+        // the mode's own default.
+        this.renderInputs();
+    }
+
+    // --- Mode input ----------------------------------------------------
+
+    /**
+     * The Input dropdown. Hidden unless the current mode offers more than one
+     * input, and rebuilt from the mode on every switch, so a mode's inputs
+     * are declared in one place: the mode itself.
+     */
+    setupInputs() {
+        this.inputCell = document.getElementById('cell-input');
+        this.inputSelect = document.getElementById('sel-input');
+        this.inputSelect.addEventListener('change', () => {
+            this.selectInput(this.inputSelect.value);
+            // Hand the keyboard back, so the shortcuts work again straight
+            // away instead of steering the dropdown.
+            this.inputSelect.blur();
+        });
+    }
+
+    renderInputs() {
+        const mode = this.ctx.visualizer.mode;
+        const inputs = mode?.inputs ?? [];
+        this.inputCell.hidden = inputs.length < 2;
+        this.inputSelect.replaceChildren(...inputs.map(({ id, label, description }) => {
+            const option = document.createElement('option');
+            option.value = id;
+            option.textContent = label;
+            option.title = description;
+            return option;
+        }));
+        if (mode?.inputId) this.inputSelect.value = mode.inputId;
+    }
+
+    selectInput(id) {
+        const mode = this.ctx.visualizer.mode;
+        if (!mode?.setInput) return;
+        this.inputSelect.value = mode.setInput(id).id;
     }
 
     // --- Sensitivity ---------------------------------------------------

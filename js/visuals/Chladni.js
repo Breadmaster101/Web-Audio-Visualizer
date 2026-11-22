@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { VisualMode } from './VisualMode.js';
+import { ANALYSIS } from '../config.js';
 import { ema, envelope, smoothstep } from '../audio/dsp.js';
 import { chladniVertexShader } from '../shaders/chladni.vert.js';
 import { chladniFragmentShader } from '../shaders/chladni.frag.js';
@@ -62,6 +63,58 @@ const BALANCE_TAU = 0.8;
 const BALANCE_GAIN = 3;
 
 /**
+ * The spectral centroid range the Brightness input spans. The engine labels
+ * material under 0.34 dark and over 0.58 bright; this reaches a little past
+ * both so either end of the list is attainable.
+ */
+const BRIGHTNESS_RANGE = [0.3, 0.65];
+
+/**
+ * The pitch range, in MIDI notes, the Melody input spans across the mode list
+ * — the same range the engine's pitch tracker searches for the lead. About two
+ * semitones per figure, so a melody's steps are visible as steps.
+ */
+const MELODY_RANGE = ANALYSIS.pitchLeadRange;
+
+/** Melody holds its figure while the tracker is less sure than this. */
+const PITCH_CONFIDENCE = 0.3;
+
+/** Below this the engine considers nothing to be playing, and Brightness holds. */
+const GATE = 0.35;
+
+/**
+ * What can choose where the plate rings, in the order the Input dropdown
+ * lists them; the first is what every visit starts on. Each `read` returns a
+ * target position along the mode list (0..15), or null to hold where it is;
+ * `tau` is how many seconds the plate takes to follow it.
+ */
+const INPUTS = [
+    {
+        id: 'balance',
+        label: 'Balance',
+        description: 'which part of the spectrum stands out',
+        tau: BALANCE_TAU,
+        read: (plate, metrics, dt) => plate.readBalance(metrics.detail, dt)
+    },
+    {
+        id: 'melody',
+        label: 'Melody',
+        description: 'the lead note, G3 to C6',
+        // Fast enough that a melody's notes register as separate steps.
+        tau: 0.2,
+        read: (plate, metrics) => plate.readMelody(metrics)
+    },
+    {
+        id: 'brightness',
+        label: 'Brightness',
+        description: 'how dark or bright the mix is',
+        // The engine's centroid is already smoothed over 0.8s.
+        tau: 0.3,
+        read: (plate, metrics) => plate.readBrightness(metrics)
+    }
+];
+
+/**
  * Chladni mode: sand on a vibrating plate, gathered on the nodal lines.
  *
  * The plate is driven by the spectrum, the way a real one is. Each of its
@@ -77,6 +130,11 @@ const BALANCE_GAIN = 3;
  * next figure. It is deliberately driven by one number averaged over every
  * band rather than by the individual bands' levels: those are noisy, and a
  * figure built from their differences jumps about with the noise.
+ *
+ * That balance point is the default input. `INPUTS` holds the alternatives —
+ * the lead note from the engine's pitch tracker, and absolute brightness —
+ * either of which can choose where the plate rings instead, picked from the
+ * Input dropdown on the bar.
  *
  * Onsets jolt the plate, bass drives it harder, and noisy material (high
  * spectral flatness) scatters the sand off the lines altogether. The colour is
@@ -98,6 +156,8 @@ export class Chladni extends VisualMode {
         this.strength = new Float32Array(MODES.length);
         /** Where on the mode list the plate is ringing, 0..15, fractional. */
         this.position = IDLE_POSITION;
+        /** What chooses that position. */
+        this.input = INPUTS[0];
 
         this.target = { vibe: 0.1, beat: 0, scatter: 0, treble: 0 };
         this.smooth = { vibe: 0.1, beat: 0, scatter: 0, treble: 0 };
@@ -167,8 +227,62 @@ export class Chladni extends VisualMode {
         // toward 1. Only the top of that range should lift the sand off.
         this.target.scatter = smoothstep(0.45, 0.85, flatness);
 
-        this.drive(metrics.detail, dt);
+        const target = this.input.read(this, metrics, dt);
+        if (target !== null) {
+            // Clamped before smoothing, so an extreme reading parks the plate
+            // at the end of the list rather than winding up past it and taking
+            // seconds to come back.
+            const clamped = Math.min(MODES.length - 1, Math.max(0, target));
+            this.position = ema(this.position, clamped, dt, this.input.tau);
+        }
+        this.writePosition();
         this.readKey(metrics);
+    }
+
+    /** The inputs this mode offers, for the control panel. */
+    get inputs() {
+        return INPUTS.map(({ id, label, description }) => ({ id, label, description }));
+    }
+
+    get inputId() {
+        return this.input.id;
+    }
+
+    /**
+     * Choose what drives the plate. An unknown id is ignored, since it may
+     * come from storage written by an older version. The plate eases from
+     * where it is to wherever the new input points, so switching never jumps.
+     */
+    setInput(id) {
+        const input = INPUTS.find((candidate) => candidate.id === id);
+        if (input) this.input = input;
+        return this.input;
+    }
+
+    /**
+     * The absolute spectral centroid. Unlike Balance it is not calibrated per
+     * band, so it is comparable between songs: a dark track sits low on the
+     * list for its whole length and a bright one high.
+     */
+    readBrightness(metrics) {
+        if (metrics.gate < GATE) return null;
+        const [lo, hi] = BRIGHTNESS_RANGE;
+        return ((metrics.tilt - lo) / (hi - lo)) * (MODES.length - 1);
+    }
+
+    /**
+     * The lead note from the engine's pitch tracker, as a position on the
+     * list: a rising line climbs through the figures. Holds while the tracker
+     * is unsure, so the plate stays on the last note through drum fills and
+     * rests instead of wandering.
+     */
+    readMelody(metrics) {
+        return this.readPitch(metrics.pitch.lead, MELODY_RANGE);
+    }
+
+    readPitch(register, [loNote, hiNote]) {
+        if (register.confidence < PITCH_CONFIDENCE) return null;
+        return ((register.note - loNote) / (hiNote - loNote)) * (MODES.length - 1);
     }
 
     /**
@@ -185,7 +299,7 @@ export class Chladni extends VisualMode {
      * the list. `BALANCE_GAIN` stretches it back out to reach both ends. With
      * nothing playing the plate holds where it is.
      */
-    drive(detail, dt) {
+    readBalance(detail, dt) {
         const per = detail.length / MODES.length;
         let moment = 0;
         let weight = 0;
@@ -198,17 +312,9 @@ export class Chladni extends VisualMode {
             moment += this.strength[i] * i;
             weight += this.strength[i];
         }
-        if (weight > 1e-3) {
-            const middle = (MODES.length - 1) / 2;
-            const centroid = moment / weight;
-            // Clamped before smoothing, so a very dark or bright passage parks
-            // the plate at the end of the list rather than winding up past it
-            // and taking seconds to come back.
-            const target = Math.min(MODES.length - 1, Math.max(0,
-                middle + (centroid - middle) * BALANCE_GAIN));
-            this.position = ema(this.position, target, dt, BALANCE_TAU);
-        }
-        this.writePosition();
+        if (weight < 1e-3) return null;
+        const middle = (MODES.length - 1) / 2;
+        return middle + (moment / weight - middle) * BALANCE_GAIN;
     }
 
     /** The two modes either side of the balance point, and the blend between them. */

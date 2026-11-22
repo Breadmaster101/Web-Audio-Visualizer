@@ -9,7 +9,7 @@ Three visualisers, driven by one analysis engine:
 |---|---|---|
 | **Sphere** | the spectrum, now | A million points displaced by four audio-driven fields. No memory: every frame is drawn from that frame's audio. |
 | **Flare** | a point of light, stared at | A blown-out core, corona, Airy rings, a squint bar and chromatic diffraction needles. Bass swells the core, treble crackles the rays, every onset flashes it. Instant attack, slow after-image release. |
-| **Chladni** | the timbre, settling | Sand on vibrating plates, gathered on their nodal lines and tiled edge to edge across the screen as a mirrored wallpaper. Sixteen plate modes are laid out low to high across the spectrum, the way a real plate's are, and the plate rings at the spectrum's balance point, blending the two modes either side of it. Dark passages draw broad, simple figures and bright ones fine detail, the same sound always draws the same figure, and the lines slide and split continuously as the balance shifts. The balance point is followed over most of a second, so each beat's kick and hat nudge the figure rather than flipping it. Onsets jolt the plate, bass drives it harder, noisy material scatters the sand, the key colours it. |
+| **Chladni** | the timbre, settling | Sand on vibrating plates, gathered on their nodal lines and tiled edge to edge across the screen as a mirrored wallpaper. Sixteen plate modes are laid out low to high across the spectrum, the way a real plate's are, and the plate rings at the spectrum's balance point, blending the two modes either side of it. Dark passages draw broad, simple figures and bright ones fine detail, the same sound always draws the same figure, and the lines slide and split continuously as the balance shifts. The balance point is followed over most of a second, so each beat's kick and hat nudge the figure rather than flipping it. The Input dropdown on the bar swaps what drives the plate: **Balance** (where every visit starts), **Melody** (the lead note from the engine's pitch tracker, G3 to C6, so a tune climbs and falls through the figures) or **Brightness** (the absolute spectral centroid, comparable between songs). Onsets jolt the plate, bass drives it harder, noisy material scatters the sand, the key colours it. |
 
 ## Running
 
@@ -42,6 +42,7 @@ js/
     OnsetDetector.js    Spectral flux with an adaptive threshold
     TempoTracker.js     Autocorrelation tempo estimate + phase-locked beat grid
     Chroma.js           Pitch classes from spectral salience + key estimation
+    Pitch.js            Bass and lead notes by harmonic summation
     dsp.js              Shared helpers (time-constant smoothing, limiter, curves)
   visuals/
     Stage.js            Scene, camera, renderer, orbit controls, bloom
@@ -74,6 +75,8 @@ One bar floating above the bottom edge, on a blurred translucent background.
 It holds everything you can change or read:
 
 - **Sphere / Flare / Chladni** picks the visualiser.
+- **Input** appears only for Chladni, and picks what drives the plate:
+  Balance, Melody or Brightness. It starts on Balance every time.
 - **System / Mic** picks the audio source.
 - **Tempo** shows the detected BPM, or *Searching* until the tracker is sure.
 - **Sens** shows the sensitivity the engine has settled on. **Auto** switches
@@ -141,17 +144,46 @@ own sensitivity setting. Each frame runs this chain:
    subtracted from the two it leaks into before the key is estimated. Measured
    against a set of triads with known answers, that takes identification from
    4/9 to 9/9. The subtraction applies to the key estimate only.
-5. **Onset detection** — spectral flux summed across all log bands, against a
+5. **Pitch** — the bass note and the lead note, with their octave. Each frame
+   the tonal peaks are found (by the same neighbourhood salience as chroma) and
+   every candidate fundamental is scored against them: peaks on its first eight
+   harmonics count for it, lower harmonics more, and peaks inside its harmonic
+   range that are *not* its harmonics count against it.
+
+   Summing harmonics is what makes the bass register work at all. At 11.7Hz a
+   bin, a 40Hz fundamental cannot be placed to within four semitones, but its
+   upper harmonics can, and they agree. It also finds notes whose fundamental
+   is missing, which bass often is. The penalty for unexplained peaks stops the
+   lowest candidates winning everything — their harmonics are packed so close
+   that some land near any partial — and a candidate needs at least two of its
+   first four harmonics present, carrying a real share of its evidence, with
+   at least one odd harmonic among them (only even ones means it is the octave
+   above).
+
+   The bass is found first and its contribution removed before the lead is
+   searched, or every bass harmonic would read as a lead note of its own. Each
+   shared peak loses only what the bass is expected to put there, estimated
+   from the bass's neighbouring harmonics, so a lead an octave or two above the
+   bass keeps its partials. Confidence is the share of the register's pitched
+   content the note explains, scaled down when that register holds little of
+   the frame's pitched content at all.
+
+   Against synthetic sawtooth basses (E1 to E3, including with the fundamental
+   and second harmonic removed), voice-like leads (A3 to A5), every pairing of
+   the two over noise, and a lead two octaves above its bass under a chord
+   pad, both notes come out right in every case, and noise alone stays near
+   zero confidence. A register holds its last note while it is unsure.
+6. **Onset detection** — spectral flux summed across all log bands, against a
    threshold built from the running mean and deviation. Because it watches the
    whole spectrum rather than the low end, it fires on snares, piano attacks and
    plucked strings, not just kick drums.
-6. **Tempo** — the onset signal is resampled to a fixed rate and autocorrelated.
+7. **Tempo** — the onset signal is resampled to a fixed rate and autocorrelated.
    A log-normal prior around 120 BPM resolves half/double-time ambiguity,
    parabolic interpolation gives sub-BPM accuracy, and agreement across
    successive estimates rejects the chance correlations that noise produces. The
    result drives a phase-locked beat grid, so the visuals keep moving in time
    through breakdowns and held chords where there is nothing to react to.
-7. **Auto sensitivity** — a slow integrator holds the average level *the shader
+8. **Auto sensitivity** — a slow integrator holds the average level *the shader
    actually receives* at a target, so a quiet stream and a loud one look the
    same. The Auto button hands this to the slider when you want manual control;
    switching to manual adopts the current automatic value, so it never jumps.
@@ -172,7 +204,7 @@ own sensitivity setting. Each frame runs this chain:
    too, so turning it up genuinely gets wilder rather than just hitting the
    ceiling sooner.
 
-8. **Dynamics** (fixed at 0.6) — how much of the music's own loudness variation
+9. **Dynamics** (fixed at 0.6) — how much of the music's own loudness variation
    survives all of the above. Levelling is what lets any genre work, but applied to a single
    song it also flattens the arrangement: every calibration window is a few
    seconds long, so a quiet verse refills the whole range shortly after it
@@ -190,7 +222,7 @@ own sensitivity setting. Each frame runs this chain:
    about 20s at 0.3 and 60-90s at 1.0, so the visualiser visibly notices a
    quieter track before settling into it. What you trade away as it rises is the
    correction that keeps a heavily compressed master from sitting high.
-9. **Smoothing** — attack and release are time constants in seconds, not
+10. **Smoothing** — attack and release are time constants in seconds, not
    per-frame constants, so the response is identical at 30fps and 144fps. The
    release scales with the detected beat period.
 
@@ -198,8 +230,9 @@ Alongside the three bands the engine exposes `beat` (onset envelope), `pulse`
 (tempo grid), `tilt` (spectral centroid), `crest` (dynamic range), `level`,
 `flatness` (tonal against noisy) and a short `profile` string. For the modes
 that need more than a three-value fold it also exposes `detail` (72 calibrated
-bands), `chroma` (the pitch-class vector, key and tonality) and the beat grid's
-`beatIndex` / `beatFired` / `beatPeriod`.
+bands), `chroma` (the pitch-class vector, key and tonality), `pitch` (`bass`
+and `lead`, each with `note` as a fractional MIDI number, `hz` and
+`confidence`) and the beat grid's `beatIndex` / `beatFired` / `beatPeriod`.
 
 `Key` reads *Atonal* when no key stands clear of the alternatives, which is the
 honest answer for percussion, noise and a good deal of electronic music. The

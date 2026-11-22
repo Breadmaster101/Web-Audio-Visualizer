@@ -5,6 +5,7 @@ import { BandNormalizer } from './BandNormalizer.js';
 import { OnsetDetector } from './OnsetDetector.js';
 import { TempoTracker } from './TempoTracker.js';
 import { Chroma } from './Chroma.js';
+import { Pitch } from './Pitch.js';
 
 /**
  * The analysis engine. Turns a raw FFT frame into the values the visuals
@@ -23,7 +24,8 @@ import { Chroma } from './Chroma.js';
  * Exposed to the visuals: bass, mid, treble, beat, pulse, tilt, crest,
  * level, bpm, confidence, gain, gate, profile — plus, for the visualisers that
  * draw the spectrum or the harmony directly rather than a fold of them,
- * `detail` (a fine calibrated band set), `chroma` (pitch classes and key) and
+ * `detail` (a fine calibrated band set), `chroma` (pitch classes and key),
+ * `pitch` (the bass and lead notes, with octave and confidence) and
  * `flatness` (tonal against noisy).
  */
 export class AudioAnalyser {
@@ -66,6 +68,7 @@ export class AudioAnalyser {
         this.onsets = new OnsetDetector(ANALYSIS.fluxBands);
         this.tempo = new TempoTracker();
         this.chroma = new Chroma(fftSize, sampleRate);
+        this.pitch = new Pitch(fftSize, sampleRate);
 
         // The detail set gets the same per-band calibration the perceptual
         // bands do, for the same reason: without it a visualiser drawing the
@@ -170,6 +173,7 @@ export class AudioAnalyser {
         this.detailBands.update(spectrum.detailDb, dt, active, follow);
         this.onsets.update(spectrum.fluxDb, dt, active, stalled);
         this.chroma.analyse(data, dt, active);
+        this.pitch.analyse(data, dt, active);
 
         this.tempo.push(this.onsets.flux, dt);
         this.tempo.tick(dt);

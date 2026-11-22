@@ -175,6 +175,61 @@ export const ANALYSIS = {
     /** Key estimates are averaged over musical time, not frames. */
     chromaKeyTau: 3.0,
 
+    // --- Pitch (bass and lead fundamentals) -----------------------------
+    /** MIDI range searched for the bass note: E1 (41Hz) to G3 (196Hz). */
+    pitchBassRange: [28, 55],
+    /** MIDI range searched for the lead note: G3 (196Hz) to C6 (1047Hz). */
+    pitchLeadRange: [55, 84],
+    /** Spacing of candidate fundamentals, in semitones. */
+    pitchStepSemitones: 1 / 3,
+    /** Harmonics summed per candidate, fundamental included. */
+    pitchHarmonics: 8,
+    /**
+     * Each harmonic counts this much less than the one below it. The decay is
+     * what keeps a candidate an octave below the true note from winning: it
+     * collects the same partials, but only at even (and lower-weighted)
+     * harmonic numbers.
+     */
+    pitchHarmonicDecay: 0.84,
+    /**
+     * How far a peak may sit from an exact harmonic and still count as one:
+     * the larger of this many bins (the limit of where a peak can be placed at
+     * all) and this fraction of the harmonic's frequency (half a semitone is
+     * ~0.03, and real strings run slightly sharp of exact multiples).
+     */
+    pitchToleranceBins: 0.6,
+    pitchToleranceRatio: 0.025,
+    /**
+     * What a peak inside a candidate's harmonic range that is not one of its
+     * harmonics costs it, relative to what a matched fundamental earns.
+     */
+    pitchUnexplainedPenalty: 0.6,
+    /**
+     * The first four harmonics must carry at least this share of a
+     * candidate's matched evidence, or it is somebody else's overtone.
+     */
+    pitchLowShare: 0.3,
+    /** How far up its harmonic series the bass note is cancelled. */
+    pitchCancelHarmonics: 24,
+    /**
+     * A register's note is only trusted if it accounts for at least this
+     * share of all the pitched content in the frame; below it, confidence is
+     * scaled down in proportion.
+     */
+    pitchPresence: 0.15,
+    /**
+     * Confidence is the share of the register's spectral peaks the winning
+     * note's harmonics account for, mapped from this floor across this range
+     * onto 0..1.
+     */
+    pitchExplainedFloor: 0.15,
+    pitchExplainedRange: 0.45,
+    /** Readings below this confidence are not taken as a note at all. */
+    pitchMinConfidence: 0.2,
+    /** Confident readings median-filtered over this many frames. */
+    pitchMedianFrames: 5,
+    pitchConfidenceTau: 0.15,
+
     // --- Per-band auto calibration (dB domain) --------------------------
     floorFallTau: 0.35,
     floorRiseTau: 9.0,
