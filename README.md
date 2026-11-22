@@ -3,12 +3,13 @@
 A GPU audio visualizer that reacts to system audio or microphone input, built on
 Three.js with custom shaders and bloom post-processing.
 
-Two visualisers, driven by one analysis engine:
+Three visualisers, driven by one analysis engine:
 
 | | | |
 |---|---|---|
 | **Sphere** | the spectrum, now | A million points displaced by four audio-driven fields. No memory: every frame is drawn from that frame's audio. |
 | **Flare** | a point of light, stared at | A blown-out core, corona, Airy rings, a squint bar and chromatic diffraction needles. Bass swells the core, treble crackles the rays, every onset flashes it. Instant attack, slow after-image release. |
+| **Chladni** | the timbre, settling | Sand on vibrating plates, gathered on their nodal lines and tiled edge to edge across the screen as a mirrored wallpaper. Sixteen plate modes are laid out low to high across the spectrum, the way a real plate's are, and the plate rings at the spectrum's balance point, blending the two modes either side of it. Dark passages draw broad, simple figures and bright ones fine detail, the same sound always draws the same figure, and the lines slide and split continuously as the balance shifts. The balance point is followed over most of a second, so each beat's kick and hat nudge the figure rather than flipping it. Onsets jolt the plate, bass drives it harder, noisy material scatters the sand, the key colours it. |
 
 ## Running
 
@@ -48,6 +49,7 @@ js/
     modes.js            The registry: one row per visualiser
     ParticleSystem.js   Sphere mode: point cloud + shader material
     Flare.js            Flare mode: half-res HDR light pass + full-res tonemap
+    Chladni.js          Chladni mode: spectrum -> mode mix, tiled sand points
     CameraShake.js      Beat-driven camera jitter (shared)
   shaders/
     particles.vert.js   Sphere vertex shader (audio-driven displacement)
@@ -55,6 +57,8 @@ js/
     flare.vert.js       Clip-space quad shared by both flare passes
     flare.frag.js       Flare light pass (core, halo, rings, streak, needles)
     flare.tonemap.js    Flare display pass (upsample, ACES, dither)
+    chladni.vert.js     Chladni grains (Newton projection onto nodal lines)
+    chladni.frag.js     Chladni fragment shader (round sand grains)
     noise.glsl.js       Reusable 3D simplex noise chunk
   ui/
     StartOverlay.js     Source-picker screen
@@ -69,7 +73,7 @@ js/
 One bar floating above the bottom edge, on a blurred translucent background.
 It holds everything you can change or read:
 
-- **Sphere / Flare** picks the visualiser.
+- **Sphere / Flare / Chladni** picks the visualiser.
 - **System / Mic** picks the audio source.
 - **Tempo** shows the detected BPM, or *Searching* until the tracker is sure.
 - **Sens** shows the sensitivity the engine has settled on. **Auto** switches
@@ -83,7 +87,7 @@ Brightness is set per visualiser in `js/visuals/modes.js`; the rest is in
 
 | Key | |
 |-----|---|
-| `1`&ndash;`2` | Pick a visualiser directly |
+| `1`&ndash;`3` | Pick a visualiser directly |
 | `V` | Step through the visualisers (`Shift+V` goes back) |
 | `H` | Hide or show the bar |
 | `F` | Fullscreen |
