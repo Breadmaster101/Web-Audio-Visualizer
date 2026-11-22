@@ -1,6 +1,6 @@
 /*
  * Start screen. Opaque, so nothing of the visualiser shows until a source has
- * been picked; the card keeps the bar's frame so the two read as one family.
+ * been picked.
  */
 #start-overlay {
     position: fixed;

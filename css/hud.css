@@ -19,7 +19,7 @@
 }
 
 /*
- * Shared by the bar and the start card. Mostly opaque with a light blur: the
+ * The bar's surface. Mostly opaque with a light blur: the
  * blur is there to soften what shows through, not to show it, and a strong
  * one turns a bright scene into a coloured wash the text has to compete with.
  */
