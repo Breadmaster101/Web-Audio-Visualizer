@@ -7,8 +7,6 @@ import { aWeightDb, clamp, dbToLin, linToDb } from './dsp.js';
  *
  *   bandsDb  — seven perceptual bands, the source of bass/mid/treble
  *   fluxDb   — ~28 log-spaced bands, the resolution onset detection runs at
- *   detailDb — a much finer log-spaced set, for the visuals that draw the
- *              spectrum itself rather than a three-value fold of it
  *
  * Frequencies are resolved to bins from the live sampleRate, so a 44.1kHz mic
  * and a 48kHz system capture see the same musical bands.
@@ -40,23 +38,6 @@ export class Spectrum {
         }
         this.fluxDb = new Float32Array(n);
 
-        // The detail set is built the same way, just finer. It is kept separate
-        // from the flux set because the two want opposite things: onset
-        // detection wants few wide bands so one transient lifts most of them at
-        // once, and a picture of the spectrum wants as many as the transform
-        // will support.
-        const [dLo, dHi] = ANALYSIS.detailRange;
-        const dn = ANALYSIS.detailBands;
-        this.detailRanges = [];
-        this.detailWeights = new Float32Array(dn);
-        for (let i = 0; i < dn; i++) {
-            const f0 = dLo * Math.pow(dHi / dLo, i / dn);
-            const f1 = dLo * Math.pow(dHi / dLo, (i + 1) / dn);
-            this.detailRanges.push(this.binRange([f0, f1]));
-            this.detailWeights[i] = aWeightDb(Math.sqrt(f0 * f1));
-        }
-        this.detailDb = new Float32Array(dn);
-
         // Centroid is mapped across the range music actually occupies, not the
         // full audible span — anchoring it at 20Hz and 20kHz would leave every
         // real track bunched around the middle with nothing to show.
@@ -64,7 +45,6 @@ export class Spectrum {
         this.centroidHi = Math.log2(6000);
 
         this.centroid = 0.5;   // 0 dark .. 1 airy, log-frequency spectral centroid
-        this.flatness = 0.5;   // 0 tonal .. 1 noisy
         this.loudnessDb = ANALYSIS.hardFloorDb;
     }
 
@@ -93,7 +73,6 @@ export class Spectrum {
 
         const n = this.fluxDb.length;
         let linSum = 0;
-        let dbSum = 0;
         let logFreqSum = 0;
 
         for (let i = 0; i < n; i++) {
@@ -103,22 +82,10 @@ export class Spectrum {
             const weighted = db + this.fluxWeights[i];
             const mag = dbToLin(weighted);
             linSum += mag;
-            dbSum += weighted;
             logFreqSum += mag * this.logCenters[i];
         }
 
-        const arithmeticDb = linToDb(linSum / n);
-        const geometricDb = dbSum / n;
-
-        this.loudnessDb = arithmeticDb;
-
-        // Geometric/arithmetic ratio: near 0 dB for noise, deeply negative for a
-        // pure tone. Percussion and distortion push it up, strings and pads down.
-        this.flatness = clamp((geometricDb - arithmeticDb + 45) / 45);
-
-        for (let i = 0; i < this.detailDb.length; i++) {
-            this.detailDb[i] = Spectrum.meanDb(data, this.detailRanges[i]) + this.detailWeights[i];
-        }
+        this.loudnessDb = linToDb(linSum / n);
 
         const centroidLog = linSum > 1e-9 ? logFreqSum / linSum : this.centroidLo;
         this.centroid = clamp((centroidLog - this.centroidLo) / (this.centroidHi - this.centroidLo));

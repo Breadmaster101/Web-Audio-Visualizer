@@ -1,25 +1,17 @@
-import { ANALYSIS } from '../config.js';
-import { AudioAnalyser } from './AudioAnalyser.js';
-import { KickFinder } from './KickFinder.js';
-
 /**
- * Owns the AudioContext and stream capture, and exposes the analysed metrics.
- * Stays silent (all values at 0) until a stream is connected.
+ * Owns the AudioContext and the captured stream, and nothing else. What the
+ * sound means is up to whichever visualizer's engine taps `sourceNode`.
  */
-export class AudioSource {
-    constructor({ onReady } = {}) {
+export class AudioCapture {
+    constructor({ onConnect, onDisconnect } = {}) {
         this.audioContext = null;
-        this.analyser = null;
-        this.dataArray = null;
         this.sourceNode = null;
-        /** Only exists while a mode that wants it is on screen. */
-        this.kick = null;
         this.stream = null;
         this.isReady = false;
         /** 'system' | 'mic' | null — which capture is currently live. */
         this.sourceName = null;
-        this.metrics = new AudioAnalyser();
-        this.onReady = onReady;
+        this.onConnect = onConnect;
+        this.onDisconnect = onDisconnect;
     }
 
     /**
@@ -78,32 +70,18 @@ export class AudioSource {
         this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
         if (this.audioContext.state === 'suspended') await this.audioContext.resume();
 
-        this.analyser = this.audioContext.createAnalyser();
-        this.analyser.fftSize = ANALYSIS.fftSize;
-        // The engine does its own time-aware smoothing; the built-in one would
-        // blur the transients onset detection depends on.
-        this.analyser.smoothingTimeConstant = 0;
-
-        const source = this.audioContext.createMediaStreamSource(stream);
-        source.connect(this.analyser);
-        this.sourceNode = source;
-
-        // Float data keeps the full dynamic range. The byte API clamps to
-        // minDecibels/maxDecibels, which throws away exactly the quiet detail
-        // the adaptive normalizer needs to calibrate against.
-        this.dataArray = new Float32Array(this.analyser.frequencyBinCount);
-        this.metrics.configure(this.analyser.fftSize, this.audioContext.sampleRate);
-
+        this.sourceNode = this.audioContext.createMediaStreamSource(stream);
         this.stream = stream;
         this.sourceName = name;
         this.isReady = true;
-        if (this.onReady) this.onReady();
+        this.onConnect?.(this.audioContext, this.sourceNode);
     }
 
     /** Release the live capture. Safe to call before anything is connected. */
     disconnect() {
         this.isReady = false;
-        this.setKickTap(false);
+        // Before the context closes, so the engine can unhook from it.
+        this.onDisconnect?.();
         this.sourceNode = null;
 
         if (this.stream) {
@@ -116,30 +94,6 @@ export class AudioSource {
             this.audioContext = null;
         }
 
-        this.analyser = null;
         this.sourceName = null;
-    }
-
-    /**
-     * Attach or remove the kick detector's tap on the stream. Cheap to call
-     * every frame; only a change does anything. Off by default, so modes that
-     * never ask for it pay nothing and see an unchanged engine.
-     */
-    setKickTap(wanted) {
-        if (wanted && !this.kick && this.sourceNode) {
-            this.kick = new KickFinder(this.audioContext, this.sourceNode);
-        } else if (!wanted && this.kick) {
-            this.kick.dispose();
-            this.kick = null;
-        }
-    }
-
-    /** Pull a fresh frame and re-analyse it. No-op before a stream is connected. */
-    update(deltaTime) {
-        if (!this.isReady) return false;
-        this.analyser.getFloatFrequencyData(this.dataArray);
-        this.metrics.update(this.dataArray, deltaTime);
-        this.kick?.update(deltaTime, this.metrics.gate);
-        return true;
     }
 }

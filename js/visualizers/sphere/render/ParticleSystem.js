@@ -1,21 +1,20 @@
 import * as THREE from 'three';
 import { CONFIG } from '../config.js';
-import { VisualMode } from './VisualMode.js';
 import { particlesVertexShader } from '../shaders/particles.vert.js';
 import { particlesFragmentShader } from '../shaders/particles.frag.js';
 
 /**
- * Sphere mode: a sphere of points displaced by audio-driven fields.
+ * A sphere of points displaced by audio-driven fields.
  *
  * The point count is fixed at `CONFIG.particles`.
  */
-export class ParticleSystem extends VisualMode {
-    constructor(stage) {
-        super(stage);
+export class ParticleSystem {
+    constructor(scene) {
+        this.scene = scene;
         this.material = this.createMaterial();
         this.points = new THREE.Points(this.createGeometry(), this.material);
         this.points.frustumCulled = false;
-        this.add(this.points);
+        this.scene.add(this.points);
     }
 
     createGeometry() {
@@ -51,7 +50,7 @@ export class ParticleSystem extends VisualMode {
                 uBeat: { value: 0 },
                 uPulse: { value: 0 },
                 uTilt: { value: 0.5 },
-                uBrightness: { value: 1 }
+                uBrightness: { value: CONFIG.brightness }
             },
             vertexShader: particlesVertexShader,
             fragmentShader: particlesFragmentShader,
@@ -59,10 +58,6 @@ export class ParticleSystem extends VisualMode {
             depthWrite: false,
             blending: THREE.AdditiveBlending
         });
-    }
-
-    setBrightness(value) {
-        this.material.uniforms.uBrightness.value = value;
     }
 
     setTime(time) {
@@ -78,5 +73,11 @@ export class ParticleSystem extends VisualMode {
         u.uBeat.value = beat;
         u.uPulse.value = pulse;
         u.uTilt.value = tilt;
+    }
+
+    dispose() {
+        this.scene.remove(this.points);
+        this.points.geometry.dispose();
+        this.material.dispose();
     }
 }

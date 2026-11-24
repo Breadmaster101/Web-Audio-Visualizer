@@ -51,8 +51,6 @@ const MIN_GAP = 0.14;
  * end, so a rumble in a quiet passage does too. It is a continuous amount, not
  * a detection, so a borderline hit comes out as a faint one rather than as a
  * flash that appears or not by luck. `fired` counts the clear ones.
- *
- * Nothing here runs until `AudioSource.setKickTap` asks for it.
  */
 export class KickDetector {
     /**

@@ -1,5 +1,5 @@
 /**
- * Small shared DSP helpers.
+ * Small DSP helpers for this engine.
  *
  * Every smoothing routine here is parameterised by a time constant in *seconds*
  * and takes the frame delta, so the engine behaves identically at 30fps and

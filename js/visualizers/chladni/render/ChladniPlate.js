@@ -1,18 +1,14 @@
 import * as THREE from 'three';
 import { CONFIG } from '../config.js';
-import { VisualMode } from './VisualMode.js';
-import { ChordReader } from '../audio/ChordReader.js';
-import { ChordRange } from '../audio/ChordRange.js';
-import { LeadReader } from '../audio/LeadReader.js';
-import { clamp, ema, envelope, smoothstep } from '../audio/dsp.js';
-import { flareVertexShader } from '../shaders/flare.vert.js';
-import { chladniFieldShader } from '../shaders/chladni.field.js';
-import { chladniSimShader } from '../shaders/chladni.sim.js';
+import { ema, envelope, smoothstep } from '../engine/dsp.js';
+import { quadVertexShader } from '../shaders/quad.vert.js';
+import { chladniFieldShader } from '../shaders/field.js';
+import { chladniSimShader } from '../shaders/sim.js';
 import {
     chladniDisplayShader,
     chladniGrainFragmentShader,
     chladniGrainVertexShader
-} from '../shaders/chladni.grains.js';
+} from '../shaders/grains.js';
 
 /** The grains are a square texture this many on a side: 1,048,576 of them. */
 const SIDE = 1024;
@@ -66,7 +62,7 @@ const FLASH_RELEASE = 0.16;
 const HEAT = 0.5;
 
 /** Bloom at rest, and what a full kick adds. */
-const BLOOM = { rest: 0.06, kick: 0.2 };
+const BLOOM = { rest: 0.108, kick: 0.36 };
 
 /** Plate units per second a kick's wavefront travels, and how it weakens. */
 const RIPPLE_SPEED = 2.8;
@@ -83,7 +79,7 @@ const LIFT_ATTACK = 0.02;
 const LIFT_RELEASE = 0.14;
 
 /**
- * Chladni mode: sand with momentum on a plate shaped by chords.
+ * Sand with momentum on a plate shaped by chords.
  *
  * Each part of the music has one job and nothing else shares it:
  *   kick      a flash of light, and a ripple that throws the sand outward
@@ -98,20 +94,19 @@ const LIFT_RELEASE = 0.14;
  * to snap between. The sand is simulated rather than recomputed, so when the
  * shape changes the grains travel to it.
  *
- * Where in the spectrum the kick and the chords are is learned for each song, by
- * `KickFinder` and `ChordRange`. The figure is drawn in clip space, so the camera,
- * orbit controls and shake have nothing to act on, and bloom is driven by the
- * kick from here rather than being set once by the registry.
+ * The figure is drawn in clip space, so no camera is involved, and bloom is
+ * driven by the kick from here.
  */
-export class Chladni extends VisualMode {
-    constructor(stage) {
-        super(stage);
+export class ChladniPlate {
+    /**
+     * @param {import('./ChladniStage.js').ChladniStage} stage
+     * @param {Float32Array} weights  The engine's live pitch-class weights.
+     */
+    constructor(stage, weights) {
+        this.stage = stage;
         this.renderer = stage.renderer;
-        this.brightness = 1;
+        this.leadHeight = 0;
 
-        this.chords = new ChordReader();
-        this.chordRange = new ChordRange();
-        this.lead = null;
         this.target = { kick: 0, sustain: 0, lift: 0 };
         this.smooth = { kick: 0, sustain: 0, lift: 0 };
         this.ripples = Array.from({ length: 4 }, () => new THREE.Vector2(-10, 0));
@@ -122,11 +117,7 @@ export class Chladni extends VisualMode {
         this.frame = 0;
 
         this.buildTargets();
-        this.buildPasses();
-    }
-
-    get wantsKick() {
-        return true;
+        this.buildPasses(weights);
     }
 
     buildTargets() {
@@ -148,13 +139,13 @@ export class Chladni extends VisualMode {
         this.density = make(1, 1, THREE.HalfFloatType, THREE.NearestFilter);
     }
 
-    buildPasses() {
+    buildPasses(weights) {
         this.passCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
         this.quad = new THREE.PlaneGeometry(2, 2);
         const pass = (fragmentShader, uniforms) => {
             const mesh = new THREE.Mesh(this.quad, new THREE.ShaderMaterial({
                 uniforms,
-                vertexShader: flareVertexShader,
+                vertexShader: quadVertexShader,
                 fragmentShader,
                 depthTest: false,
                 depthWrite: false
@@ -175,7 +166,7 @@ export class Chladni extends VisualMode {
             uExtent: { value: this.extent },
             uWaves: { value: WAVES.map((wave) => new THREE.Vector3(...wave)) },
             uZoom: { value: 1 },
-            uWeights: { value: this.chords.weights }
+            uWeights: { value: weights }
         });
         this.fieldScene = alone(this.fieldMesh);
 
@@ -222,37 +213,24 @@ export class Chladni extends VisualMode {
         this.grains.frustumCulled = false;
         this.grainScene = alone(this.grains);
 
-        this.display = this.add(pass(chladniDisplayShader, {
+        this.display = pass(chladniDisplayShader, {
             uDensity: { value: this.density.texture },
             uColor: { value: this.color },
             uLight: { value: LIGHT.rest },
             uHeat: { value: 0 }
-        }));
+        });
+        this.stage.scene.add(this.display);
     }
 
-    setBrightness(value) {
-        this.brightness = value;
-    }
-
-    setAudio(metrics, dt, { kick, dataArray, analyser, audioContext }) {
+    /** @param {import('../engine/ChladniEngine.js').ChladniEngine} engine */
+    setAudio({ kick, sustain, kickFired, strength, lift, leadHeight, tonic, isMinor, tonality }) {
         this.audioThisFrame = true;
-        // Built to the stream's own rate, so again if the source changes to another.
-        if (this.lead?.sampleRate !== audioContext.sampleRate) {
-            this.lead = new LeadReader(analyser.fftSize, audioContext.sampleRate);
-        }
-        this.lead.update(dataArray, metrics.gate, dt);
-        this.chordRange.update(metrics.chroma, metrics.gate, dt);
-        this.chords.update(this.chordRange.raw, metrics.gate, dt, this.lead);
-        this.target.lift = this.chords.change * smoothstep(0.2, 0.6, this.chords.distance);
+        this.target.kick = kick;
+        this.target.sustain = sustain;
+        this.target.lift = lift;
+        this.leadHeight = leadHeight;
+        if (kickFired) this.launchRipple(strength);
 
-        // The detector calibrates itself, so only the controls a person sets
-        // scale it. Auto-gain would be correcting it twice.
-        const gain = CONFIG.trim * (CONFIG.autoSensitivity ? 1 : metrics.gain) * metrics.gate;
-        this.target.kick = clamp((kick?.kick ?? 0) * gain, 0, 1.2);
-        this.target.sustain = clamp((kick?.sustain ?? 0) * gain, 0, 1.2);
-        if (kick?.fired) this.launchRipple(clamp(gain, 0, 1.2));
-
-        const { tonic, isMinor, tonality } = metrics.chroma;
         const hue = ((tonic * 7) % 12) / 12;
         const keyColor = new THREE.Color().setHSL(hue, 0.8, isMinor ? 0.5 : 0.62);
         this.targetColor.copy(SAND).lerp(keyColor, smoothstep(0.15, 0.6, tonality) * 0.85);
@@ -283,10 +261,10 @@ export class Chladni extends VisualMode {
         }
 
         const u = this.display.material.uniforms;
-        u.uLight.value = this.brightness
+        u.uLight.value = CONFIG.brightness
             * (LIGHT.rest + s.sustain * LIGHT.sustain + s.kick * LIGHT.kick);
-        u.uHeat.value = this.brightness * s.kick * s.kick * HEAT;
-        this.stage.setBloomScale(BLOOM.rest + s.kick * BLOOM.kick);
+        u.uHeat.value = CONFIG.brightness * s.kick * s.kick * HEAT;
+        this.stage.setBloom(BLOOM.rest + s.kick * BLOOM.kick);
 
         this.fit();
         this.step(Math.min(dt, 1 / 30));
@@ -321,7 +299,7 @@ export class Chladni extends VisualMode {
 
         const zoom = this.fieldMesh.material.uniforms.uZoom;
         const before = zoom.value;
-        zoom.value = LEAD_ZOOM ** (this.lead?.height ?? 0);
+        zoom.value = LEAD_ZOOM ** this.leadHeight;
         this.simMesh.material.uniforms.uStretch.value = before / zoom.value;
         draw(this.fieldScene, this.field);
 
@@ -343,7 +321,8 @@ export class Chladni extends VisualMode {
     }
 
     dispose() {
-        super.dispose();
+        this.stage.scene.remove(this.display);
+        this.display.material.dispose();
         for (const target of [this.state, this.nextState, this.field, this.density]) {
             target.dispose();
         }

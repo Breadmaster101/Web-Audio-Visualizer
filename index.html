@@ -41,7 +41,7 @@
     <div id="hud" class="ui-layer glass" role="toolbar" aria-label="Visualizer controls">
 
         <div class="hud-cell">
-            <!-- Filled in by ControlPanel from the registry in visuals/modes.js. -->
+            <!-- Filled in by ControlPanel from the registry in visualizers/index.js. -->
             <div class="seg" id="mode-list" role="radiogroup" aria-label="Visualizer"></div>
         </div>
 
@@ -53,14 +53,9 @@
         </div>
 
         <div class="hud-cell">
-            <span class="hud-label">Tempo</span>
-            <span class="hud-value" id="val-bpm">&mdash;</span>
-        </div>
-
-        <div class="hud-cell">
             <label class="hud-label" for="inp-sensitivity">Sens</label>
             <input type="range" id="inp-sensitivity" min="0.10" max="2.20" step="0.01" value="1.00" hidden>
-            <span class="hud-value hud-value-short" id="val-sensitivity">1.00</span>
+            <span class="hud-value" id="val-sensitivity">1.00</span>
             <div class="seg">
                 <button id="btn-auto-sensitivity" class="seg-btn" aria-pressed="true"
                         title="Toggle automatic sensitivity (A)">Auto</button>

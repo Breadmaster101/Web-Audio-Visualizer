@@ -1,6 +1,5 @@
-import * as THREE from 'three';
 import { CONFIG } from '../config.js';
-import { ema } from '../audio/dsp.js';
+import { ema } from '../engine/dsp.js';
 
 /**
  * Jitters the camera on beats. The amount is scaled by the track's own dynamic
@@ -13,7 +12,7 @@ import { ema } from '../audio/dsp.js';
 export class CameraShake {
     constructor(camera) {
         this.camera = camera;
-        this.basePosition = new THREE.Vector3(0, 2, 8);
+        this.basePosition = camera.position.clone();
     }
 
     apply({ bass, beat, pulse, crest }, deltaTime) {

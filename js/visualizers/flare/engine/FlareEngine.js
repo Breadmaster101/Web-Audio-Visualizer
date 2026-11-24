@@ -4,16 +4,14 @@ import { Spectrum } from './Spectrum.js';
 import { BandNormalizer } from './BandNormalizer.js';
 import { OnsetDetector } from './OnsetDetector.js';
 import { TempoTracker } from './TempoTracker.js';
-import { Chroma } from './Chroma.js';
-import { Pitch } from './Pitch.js';
 
 /**
- * The analysis engine. Turns a raw FFT frame into the values the visuals
- * consume, calibrating itself continuously so that no genre needs a different
- * sensitivity setting.
+ * The flare analysis engine. Taps the stream with its own FFT and turns each
+ * frame into the values the visualizer draws, calibrating itself
+ * continuously so that no genre needs a different sensitivity setting.
  *
  * The chain:
- *   spectrum      log-spaced perceptual bands + timbre descriptors
+ *   spectrum      log-spaced perceptual bands + loudness
  *   normalizer    per-band floor/ceiling tracking, then per-band exponent
  *                 shaping toward a target average level
  *   onsets        spectral flux across all bands with an adaptive threshold
@@ -21,15 +19,18 @@ import { Pitch } from './Pitch.js';
  *   AGC           slow master gain that holds overall activity at a target
  *   smoothing     attack/release times that adapt to the music's own pace
  *
- * Exposed to the visuals: bass, mid, treble, beat, pulse, tilt, crest,
- * level, bpm, confidence, gain, gate, profile — plus, for the visualisers that
- * draw the spectrum or the harmony directly rather than a fold of them,
- * `detail` (a fine calibrated band set), `chroma` (pitch classes and key),
- * `pitch` (the bass and lead notes, with octave and confidence) and
- * `flatness` (tonal against noisy).
+ * Exposed to the visuals: bass, mid, treble, beat.
  */
-export class AudioAnalyser {
-    constructor(fftSize = ANALYSIS.fftSize, sampleRate = 48000) {
+export class FlareEngine {
+    constructor() {
+        this.analyser = null;
+        this.source = null;
+        this.data = null;
+
+        this.autoSensitivity = true;
+        /** Manual gain. Only consulted while `autoSensitivity` is off. */
+        this.sensitivity = 1;
+
         this.bass = 0;
         this.mid = 0;
         this.treble = 0;
@@ -37,24 +38,65 @@ export class AudioAnalyser {
         this.smoothMid = 0;
         this.smoothTreble = 0;
         this.beat = 0;
-        this.pulse = 0;
         this.beatDecay = 0;
 
         this.gain = 1;
         this.gate = 0;
-        this.level = 0;
-        this.tilt = 0.5;
-        this.crest = 0.5;
-        this.flatness = 0.5;
         this.activity = ANALYSIS.agcTarget;
 
         this.loudCeil = ANALYSIS.hardFloorDb;
         this.loudEnvelope = ANALYSIS.hardFloorDb;
         this.settled = 0;
-        this.loudMean = ANALYSIS.hardFloorDb;
-        this.loudPeak = ANALYSIS.hardFloorDb;
 
-        this.configure(fftSize, sampleRate);
+        this.configure(ANALYSIS.fftSize, 48000);
+    }
+
+    // --- Stream ----------------------------------------------------------
+
+    /** Start listening to a live source node. */
+    connect(context, source) {
+        this.disconnect();
+        this.analyser = context.createAnalyser();
+        this.analyser.fftSize = ANALYSIS.fftSize;
+        // The engine does its own time-aware smoothing; the built-in one would
+        // blur the transients onset detection depends on.
+        this.analyser.smoothingTimeConstant = 0;
+        source.connect(this.analyser);
+        this.source = source;
+
+        // Float data keeps the full dynamic range. The byte API clamps to
+        // minDecibels/maxDecibels, which throws away exactly the quiet detail
+        // the adaptive normalizer needs to calibrate against.
+        this.data = new Float32Array(this.analyser.frequencyBinCount);
+        this.configure(this.analyser.fftSize, context.sampleRate);
+    }
+
+    /** Stop listening. Safe to call when nothing is connected. */
+    disconnect() {
+        if (!this.analyser) return;
+        this.source.disconnect(this.analyser);
+        this.analyser = null;
+        this.source = null;
+    }
+
+    // --- Sensitivity -----------------------------------------------------
+
+    setSensitivity({ auto, manual }) {
+        this.autoSensitivity = auto;
+        this.sensitivity = manual;
+    }
+
+    /**
+     * Set the gain outright: the manual value, or where Auto last settled.
+     *
+     * With nothing saved, Auto starts mid-range: the loop lowers gain several
+     * times faster than it raises it, so starting high costs a few seconds,
+     * starting low a minute.
+     */
+    restoreGain(autoGain) {
+        const [min, max] = ANALYSIS.agcRange;
+        const start = Number.isFinite(autoGain) ? clamp(autoGain, min, max) : (min + max) / 2;
+        this.gain = this.autoSensitivity ? start : this.sensitivity;
     }
 
     /** (Re)build everything that depends on the FFT geometry. */
@@ -67,15 +109,6 @@ export class AudioAnalyser {
         this.bands = new BandNormalizer(this.spectrum.bandNames.length);
         this.onsets = new OnsetDetector(ANALYSIS.fluxBands);
         this.tempo = new TempoTracker();
-        this.chroma = new Chroma(fftSize, sampleRate);
-        this.pitch = new Pitch(fftSize, sampleRate);
-
-        // The detail set gets the same per-band calibration the perceptual
-        // bands do, for the same reason: without it a visualiser drawing the
-        // spectrum shows one shape for every track, dominated by wherever that
-        // master happens to put its energy, instead of showing the music.
-        this.detailBands = new BandNormalizer(ANALYSIS.detailBands);
-        this.detail = new Float32Array(ANALYSIS.detailBands);
 
         // Resolve the band-group weights to array indices once.
         this.groups = Object.entries(BAND_GROUPS).map(([key, weights]) => ({
@@ -87,61 +120,15 @@ export class AudioAnalyser {
         }));
     }
 
-    get bpm() {
-        return this.tempo.confidence > ANALYSIS.minConfidence ? this.tempo.bpm : 0;
+    /** Pull and analyse a fresh frame. False while no stream is connected. */
+    update(deltaTime) {
+        if (!this.analyser) return false;
+        this.analyser.getFloatFrequencyData(this.data);
+        this.analyse(this.data, deltaTime);
+        return true;
     }
 
-    get confidence() {
-        return this.tempo.confidence;
-    }
-
-    /** Beats of the grid so far. Increments through silence once tempo is known. */
-    get beatIndex() {
-        return this.tempo.beatIndex;
-    }
-
-    /** True for exactly the frame a grid beat lands on. */
-    get beatFired() {
-        return this.tempo.beatFired;
-    }
-
-    /** Seconds per beat. Falls back to a 2Hz default before tempo is known. */
-    get beatPeriod() {
-        return this.tempo.period;
-    }
-
-    /** Position within the current beat, 0 at the beat and rising to 1 at the next. */
-    get beatPhase() {
-        return this.tempo.phase;
-    }
-
-    /** Smoothed strength of each of the twelve pitch classes, C first, 0..1. */
-    get chromaValues() {
-        return this.chroma.values;
-    }
-
-    /** How clearly a key is established, 0..1. Low for drums, noise and silence. */
-    get tonality() {
-        return this.chroma.tonality;
-    }
-
-    /** Detected key, e.g. "F# min", or an empty string while none is established. */
-    get key() {
-        return this.chroma.keyName;
-    }
-
-    /** Short human-readable description of the material the engine is hearing. */
-    get profile() {
-        if (this.gate < 0.35) return 'Listening';
-
-        const rate = this.onsets.rate;
-        const driven = this.tempo.confidence > 0.4 && rate > 1.4;
-        const texture = driven ? 'Percussive' : rate < 0.8 ? 'Sustained' : 'Mixed';
-        const tone = this.tilt > 0.58 ? 'Bright' : this.tilt < 0.34 ? 'Dark' : 'Even';
-        return `${texture} / ${tone}`;
-    }
-
-    update(data, deltaTime) {
+    analyse(data, deltaTime) {
         const A = ANALYSIS;
         // rAF deltas spike on tab focus changes; a runaway dt would blow every
         // time constant open at once.
@@ -170,28 +157,11 @@ export class AudioAnalyser {
 
         const follow = clamp(CONFIG.loudnessFollow);
         this.bands.update(spectrum.bandsDb, dt, active, follow);
-        this.detailBands.update(spectrum.detailDb, dt, active, follow);
         this.onsets.update(spectrum.fluxDb, dt, active, stalled);
-        this.chroma.analyse(data, dt, active);
-        this.pitch.analyse(data, dt, active);
 
         this.tempo.push(this.onsets.flux, dt);
         this.tempo.tick(dt);
         this.tempo.advance(dt, this.onsets.strength);
-
-        // --- Timbre + dynamics --------------------------------------------
-        this.tilt = ema(this.tilt, active ? spectrum.centroid : 0.5, dt, 0.8);
-        this.flatness = ema(this.flatness, active ? spectrum.flatness : 0.5, dt, 0.6);
-
-        if (active) {
-            this.loudMean = ema(this.loudMean, loud, dt, 3.0);
-            this.loudPeak = loud > this.loudPeak ? loud : ema(this.loudPeak, loud, dt, 3.0);
-        }
-        // Crest factor: how much headroom the track leaves above its own
-        // average. Compressed masters sit near 0, acoustic recordings much higher.
-        this.crest = ema(this.crest,
-            clamp((this.loudPeak - this.loudMean) / A.crestRangeDb), dt, 1.5);
-        this.level = clamp((this.loudEnvelope - (this.loudCeil - A.gateRangeDb)) / A.gateRangeDb);
 
         // --- Onset envelope, decaying in musical time ----------------------
         const beatRelease = clamp(this.tempo.period * 0.34, 0.10, 0.42);
@@ -221,7 +191,7 @@ export class AudioAnalyser {
                 lerp(A.agcTau, A.followAgcTau, follow));
         }
 
-        if (CONFIG.autoSensitivity) {
+        if (this.autoSensitivity) {
             const error = A.agcTarget - this.activity;
 
             // Raising gain is the one direction that can misbehave. When the
@@ -240,7 +210,7 @@ export class AudioAnalyser {
                     A.agcRange[0], A.agcRange[1]);
             }
         } else {
-            this.gain = ema(this.gain, CONFIG.sensitivity, dt, 0.2);
+            this.gain = ema(this.gain, this.sensitivity, dt, 0.2);
         }
 
         const g = this.gain * this.gate;
@@ -273,13 +243,5 @@ export class AudioAnalyser {
         this.mid = limit(this.smoothMid);
         this.treble = limit(this.smoothTreble);
         this.beat = limit(this.beatDecay * g);
-        this.pulse = limit(this.tempo.pulse * clamp(this.tempo.confidence) * g);
-
-        // The detail set takes the same gain and limiter as the three bands, so
-        // a visualiser drawing it sits at the same level as one drawing them,
-        // and the Sensitivity and Trim controls mean one thing across all modes.
-        for (let i = 0; i < this.detail.length; i++) {
-            this.detail[i] = limit(this.detailBands.out[i] * g);
-        }
     }
 }

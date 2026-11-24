@@ -2,7 +2,7 @@
  * The HUD: one bar floating above the bottom edge.
  *
  * Everything the app lets you change or read lives in it: visualiser, audio
- * source, detected tempo, sensitivity, fullscreen. Cells are separated by the
+ * source, sensitivity, fullscreen. Cells are separated by the
  * same 1px rule that frames the bar, so it reads as a single strip rather than
  * a row of buttons.
  */
@@ -69,9 +69,8 @@
 }
 
 /*
- * Fixed widths so the bar does not twitch as the digits change underneath it:
- * "SEARCHING" and "128 BPM" are different lengths, and the bar is centred, so
- * any change in its width moves every other control.
+ * Fixed width so the bar does not twitch as the digits change underneath it:
+ * the bar is centred, so any change in its width moves every other control.
  */
 .hud-value {
     font-size: 11px;
@@ -79,10 +78,6 @@
     letter-spacing: 1px;
     text-transform: uppercase;
     color: var(--fg);
-    min-width: 9ch;
-}
-
-.hud-value-short {
     min-width: 4ch;
     text-align: right;
 }

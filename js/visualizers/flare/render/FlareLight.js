@@ -1,10 +1,9 @@
 import * as THREE from 'three';
 import { CONFIG } from '../config.js';
-import { VisualMode } from './VisualMode.js';
-import { envelope } from '../audio/dsp.js';
-import { flareVertexShader } from '../shaders/flare.vert.js';
-import { flareFragmentShader } from '../shaders/flare.frag.js';
-import { flareTonemapShader } from '../shaders/flare.tonemap.js';
+import { envelope } from '../engine/dsp.js';
+import { quadVertexShader } from '../shaders/quad.vert.js';
+import { flareFragmentShader } from '../shaders/light.frag.js';
+import { flareTonemapShader } from '../shaders/tonemap.frag.js';
 
 /**
  * The light pass runs at this fraction of the drawing buffer. The image is
@@ -28,7 +27,7 @@ const RELEASE = { intensity: 0.32, bass: 0.20, treble: 0.12 };
 const IDLE = { intensity: 0.04, bass: 0.0, treble: 0.0 };
 
 /**
- * Flare mode: a point of light seen straight on.
+ * A point of light seen straight on.
  *
  * Everything here is a picture of what the eye does to a bright source rather
  * than of the source itself — a blown-out core, a corona, faint interference
@@ -38,16 +37,13 @@ const IDLE = { intensity: 0.04, bass: 0.0, treble: 0.0 };
  *
  * Two passes. The light is rendered as linear HDR into a half-resolution float
  * target, then a full-screen quad in the main scene upsamples it, tonemaps it
- * and dithers it. Both quads are drawn in clip space, so the camera, the orbit
- * controls and the beat-driven shake all have nothing to act on here; the
- * registry row denies auto-rotate and lists no camera controls for that reason.
+ * and dithers it. Both quads are drawn in clip space, so no camera is
+ * involved.
  */
-export class Flare extends VisualMode {
+export class FlareLight {
     constructor(stage) {
-        super(stage);
-
+        this.scene = stage.scene;
         this.renderer = stage.renderer;
-        this.brightness = 0.8;
 
         this.target = { intensity: IDLE.intensity, bass: 0, treble: 0 };
         this.smooth = { intensity: 0, bass: 0, treble: 0 };
@@ -64,7 +60,7 @@ export class Flare extends VisualMode {
                 uAspect: { value: 1 },
                 uDispersion: { value: CONFIG.chromaticAberration ? 1 : 0 }
             },
-            vertexShader: flareVertexShader,
+            vertexShader: quadVertexShader,
             fragmentShader: flareFragmentShader,
             depthTest: false,
             depthWrite: false
@@ -80,7 +76,7 @@ export class Flare extends VisualMode {
 
         this.displayMaterial = new THREE.ShaderMaterial({
             uniforms: { uLight: { value: this.lightTarget.texture } },
-            vertexShader: flareVertexShader,
+            vertexShader: quadVertexShader,
             fragmentShader: flareTonemapShader,
             depthTest: false,
             depthWrite: false
@@ -88,7 +84,8 @@ export class Flare extends VisualMode {
 
         const display = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.displayMaterial);
         display.frustumCulled = false;
-        this.add(display);
+        this.scene.add(display);
+        this.display = display;
     }
 
     /**
@@ -135,15 +132,6 @@ export class Flare extends VisualMode {
         this.lightMaterial.uniforms.uAspect.value = size.x / size.y;
     }
 
-    setBrightness(value) {
-        this.brightness = value;
-    }
-
-    /** Whether the needles are split into red, green and blue. */
-    setChromaticAberration(enabled) {
-        this.lightMaterial.uniforms.uDispersion.value = enabled ? 1 : 0;
-    }
-
     /**
      * Only the targets are set here; the smoothing happens in `setTime`, which
      * runs whether or not audio is connected. That is what lets the flare fade
@@ -174,8 +162,7 @@ export class Flare extends VisualMode {
 
         const u = this.lightMaterial.uniforms;
         u.uTime.value = time;
-        // 0.8 is the shader's tuned exposure.
-        u.uIntensity.value = s.intensity * (this.brightness / 0.8);
+        u.uIntensity.value = s.intensity * CONFIG.brightness;
         u.uBass.value = s.bass;
         u.uTreble.value = s.treble;
 
@@ -191,7 +178,9 @@ export class Flare extends VisualMode {
     }
 
     dispose() {
-        super.dispose();
+        this.scene.remove(this.display);
+        this.display.geometry.dispose();
+        this.displayMaterial.dispose();
         this.lightTarget.dispose();
         this.lightQuad.geometry.dispose();
         this.lightMaterial.dispose();

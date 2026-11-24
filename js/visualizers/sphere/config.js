@@ -1,17 +1,12 @@
-/**
- * Tunables shared across modules. Only `sensitivity`, `autoSensitivity` and
- * `mode` change at runtime; everything else is fixed. Brightness is per mode,
- * in `visuals/modes.js`.
- */
+/** Every tunable of the Sphere visualizer. */
 export const CONFIG = {
     particles: 1000000,
     particleSize: 0.08,
+    brightness: 0.10,
+    cameraPosition: [0, 2, 8],
     bloomStrength: 1.8,
     bloomRadius: 0.5,
     bloomThreshold: 0.1,
-    /** Manual gain. Only consulted while `autoSensitivity` is off. */
-    sensitivity: 1.0,
-    autoSensitivity: true,
     /** Scales the finished output, outside the auto-gain loop. */
     trim: 1.0,
     /**
@@ -23,11 +18,7 @@ export const CONFIG = {
     /** Scales the beat-driven camera jitter. 0 holds the camera perfectly still. */
     shake: 1.0,
     autoRotate: true,
-    autoRotateSpeed: 0.5,
-    /** Flare only: split the diffraction needles into red, green and blue. */
-    chromaticAberration: true,
-    /** Which visualiser is on screen. Ids come from `visuals/modes.js`. */
-    mode: 'sphere'
+    autoRotateSpeed: 0.5
 };
 
 /**
@@ -84,151 +75,6 @@ export const ANALYSIS = {
      * fire a false onset and poison the adaptive threshold for seconds after.
      */
     stallSeconds: 0.1,
-
-    // --- Detail spectrum -------------------------------------------------
-    /**
-     * A finer log-spaced band set than onset detection needs, for the visuals
-     * that draw the spectrum itself rather than a three-value fold of it.
-     * Onset detection wants few, wide bands so that a transient shows up as a
-     * large rise in most of them at once; a picture of the spectrum wants the
-     * opposite. Sharing one band set would compromise both.
-     */
-    detailBands: 72,
-    detailRange: [30, 16000],
-
-    // --- Chroma (pitch classes) -----------------------------------------
-    /**
-     * MIDI note range folded onto the twelve pitch classes. The bottom is set
-     * by FFT resolution rather than by taste: a 4096-point transform at 48kHz
-     * resolves ~11.7Hz, and a semitone is narrower than that below roughly
-     * C3. Low notes still register through their harmonics, which land in the
-     * part of the spectrum that *is* resolved.
-     */
-    chromaRange: [48, 96],
-    /** Bins this far in cents from a semitone centre stop contributing to it. */
-    chromaSpreadCents: 100,
-    /**
-     * Half-width, in bins, of the window a bin is compared against to decide
-     * whether it is a peak or part of the background.
-     *
-     * This is what makes the whole thing work. Summing raw energy per pitch
-     * class gives an almost flat vector for any real mix, because a snare or a
-     * cymbal puts broadband energy into every class at once and there are far
-     * more noise bins than tonal ones. Measuring each bin against its own
-     * neighbourhood instead means flat regions contribute nothing however loud
-     * they are, and only actual partials count.
-     */
-    chromaBackgroundBins: 22,
-    /** dB a bin must stand above its neighbourhood before it counts at all. */
-    chromaSalienceDb: 2.5,
-    /**
-     * dB of excess at which a bin counts as fully tonal.
-     *
-     * Salience gates a bin's contribution; it does not replace it. The bin still
-     * contributes its actual magnitude. Letting the excess itself be the
-     * contribution sounds reasonable and is badly wrong: against a quiet
-     * background every partial stands out by a hundred decibels or more
-     * regardless of how loud it is, so a sixth harmonic forty decibels down
-     * counts for as much as the fundamental. Pitch classes that merely appear
-     * in more harmonic positions than others then win, and a C major triad
-     * reads as B.
-     */
-    chromaSalienceKneeDb: 9,
-    /**
-     * Octave weighting: partials are scaled by a Gaussian on log frequency,
-     * centred here and this many octaves wide.
-     *
-     * Harmonics are the standing problem with chroma taken from audio. A note's
-     * third harmonic lands on its fifth and its fifth harmonic on its major
-     * third, so a single sustained C deposits real energy on G and E, and a C
-     * major triad can end up with G scoring above C. Weighting toward the
-     * register where the notes themselves are played, and away from the one
-     * where only their upper harmonics reach, is the cheapest correction that
-     * does not involve guessing at which partials belong to which note.
-     */
-    chromaCentreHz: 330,
-    chromaOctaveWidth: 1.15,
-    /**
-     * How much of a pitch class is subtracted from the classes its harmonics
-     * fall on, before the key is estimated.
-     *
-     * Octave weighting reduces harmonic leakage; it cannot remove it, because a
-     * note's third harmonic is only an octave and a fifth above the note itself
-     * and no register weighting separates those. Subtracting the leakage
-     * directly does. Measured against a set of triads with known answers, this
-     * takes key identification from 4/9 to 9/9, and the result is stable
-     * anywhere between about 0.3 and 0.5.
-     *
-     * It is applied to the key estimate only. The wheel keeps drawing measured
-     * energy, because an open fifth really does have a fifth sounding in it and
-     * a display that subtracted one would be showing an inference rather than
-     * the music.
-     */
-    chromaHarmonicSuppression: 0.4,
-    /**
-     * Everything this far below the loudest pitch class is treated as leakage.
-     * Lower than it would need to be without the salience step, which has
-     * already removed most of what this used to be there to suppress.
-     */
-    chromaFloor: 0.18,
-    chromaTau: 0.10,
-    /** Key estimates are averaged over musical time, not frames. */
-    chromaKeyTau: 3.0,
-
-    // --- Pitch (bass and lead fundamentals) -----------------------------
-    /** MIDI range searched for the bass note: E1 (41Hz) to G3 (196Hz). */
-    pitchBassRange: [28, 55],
-    /** MIDI range searched for the lead note: G3 (196Hz) to C6 (1047Hz). */
-    pitchLeadRange: [55, 84],
-    /** Spacing of candidate fundamentals, in semitones. */
-    pitchStepSemitones: 1 / 3,
-    /** Harmonics summed per candidate, fundamental included. */
-    pitchHarmonics: 8,
-    /**
-     * Each harmonic counts this much less than the one below it. The decay is
-     * what keeps a candidate an octave below the true note from winning: it
-     * collects the same partials, but only at even (and lower-weighted)
-     * harmonic numbers.
-     */
-    pitchHarmonicDecay: 0.84,
-    /**
-     * How far a peak may sit from an exact harmonic and still count as one:
-     * the larger of this many bins (the limit of where a peak can be placed at
-     * all) and this fraction of the harmonic's frequency (half a semitone is
-     * ~0.03, and real strings run slightly sharp of exact multiples).
-     */
-    pitchToleranceBins: 0.6,
-    pitchToleranceRatio: 0.025,
-    /**
-     * What a peak inside a candidate's harmonic range that is not one of its
-     * harmonics costs it, relative to what a matched fundamental earns.
-     */
-    pitchUnexplainedPenalty: 0.6,
-    /**
-     * The first four harmonics must carry at least this share of a
-     * candidate's matched evidence, or it is somebody else's overtone.
-     */
-    pitchLowShare: 0.3,
-    /** How far up its harmonic series the bass note is cancelled. */
-    pitchCancelHarmonics: 24,
-    /**
-     * A register's note is only trusted if it accounts for at least this
-     * share of all the pitched content in the frame; below it, confidence is
-     * scaled down in proportion.
-     */
-    pitchPresence: 0.15,
-    /**
-     * Confidence is the share of the register's spectral peaks the winning
-     * note's harmonics account for, mapped from this floor across this range
-     * onto 0..1.
-     */
-    pitchExplainedFloor: 0.15,
-    pitchExplainedRange: 0.45,
-    /** Readings below this confidence are not taken as a note at all. */
-    pitchMinConfidence: 0.2,
-    /** Confident readings median-filtered over this many frames. */
-    pitchMedianFrames: 5,
-    pitchConfidenceTau: 0.15,
 
     // --- Per-band auto calibration (dB domain) --------------------------
     floorFallTau: 0.35,
@@ -320,7 +166,6 @@ export const ANALYSIS = {
     /** Successive estimates within this fraction count as agreeing. */
     tempoAgreement: 0.05,
     agreementNeeded: 4,
-
     /**
      * Calibration windows at loudnessFollow = 1.
      *
