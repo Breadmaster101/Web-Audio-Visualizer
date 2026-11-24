@@ -1,374 +1,356 @@
 import * as THREE from 'three';
+import { CONFIG } from '../config.js';
 import { VisualMode } from './VisualMode.js';
-import { ANALYSIS } from '../config.js';
-import { ema, envelope, smoothstep } from '../audio/dsp.js';
-import { chladniVertexShader } from '../shaders/chladni.vert.js';
-import { chladniFragmentShader } from '../shaders/chladni.frag.js';
+import { ChordReader } from '../audio/ChordReader.js';
+import { ChordRange } from '../audio/ChordRange.js';
+import { LeadReader } from '../audio/LeadReader.js';
+import { clamp, ema, envelope, smoothstep } from '../audio/dsp.js';
+import { flareVertexShader } from '../shaders/flare.vert.js';
+import { chladniFieldShader } from '../shaders/chladni.field.js';
+import { chladniSimShader } from '../shaders/chladni.sim.js';
+import {
+    chladniDisplayShader,
+    chladniGrainFragmentShader,
+    chladniGrainVertexShader
+} from '../shaders/chladni.grains.js';
+
+/** The grains are a square texture this many on a side: 1,048,576 of them. */
+const SIDE = 1024;
+
+/** Size of the field texture. Its finest wave spans dozens of texels. */
+const FIELD_SIZE = 512;
 
 /**
- * Grains of sand, spread over the whole screen. The lines cover a small share
- * of it, so this is what keeps them dense once the figure is tiled.
+ * How far past the screen's edge the plate and its sand go on. Enough that when
+ * the lead rises and the figure shrinks, there is sand out there to come in.
  */
-const GRAINS = 1000000;
+const OVERSCAN = 1.1;
 
-/** How many plates fit across the shorter side of the screen. */
-const CELLS_SHORT = 2;
+/**
+ * One wave per pitch class, C first: (m, n, symmetry), m and n being the
+ * half-waves across half the screen's shorter side. None are whole numbers, so
+ * the pattern never repeats across the width. Neighbouring notes are kept far
+ * apart, so a chord that changes by a semitone changes visibly. A symmetry of 1
+ * is a figure with the plate's full square symmetry; -1 keeps only its mirrors.
+ */
+const WAVES = [
+    [3.35, 1.15, 1],       // C
+    [4.60, 2.10, -1],      // C#
+    [2.45, 2.05, 1],       // D
+    [5.15, 0.75, 1],       // D#
+    [4.10, 2.65, -1],      // E
+    [2.70, 0.60, 1],       // F
+    [5.30, 3.20, 1],       // F#
+    [3.80, 1.95, 1],       // G
+    [4.85, 3.55, -1],      // G#
+    [3.05, 2.55, 1],       // A
+    [5.60, 1.70, 1],       // A#
+    [4.40, 1.35, -1]       // B
+];
 
 /** Warm sand, the colour with no key established. */
 const SAND = new THREE.Color(1.0, 0.86, 0.64);
 
 /**
- * The plate's modes, lowest first. A real plate's mode rings at a frequency
- * that rises with m^2 + n^2, so ordering by that is ordering by pitch: the
- * first few are the broad figures a deep sound excites, the last the fine
- * lattices that only high frequencies reach. The symmetry alternates so
- * neighbouring modes read as different figures rather than as one figure
- * gaining a line.
+ * How bright solid sand is: at rest, added by a full sustained bass, and added
+ * by a full kick. The rest is dim on purpose. It is what the kick has to rise
+ * from, and lines that start bright have nowhere left to go.
  */
-const MODES = [];
-for (let m = 2; m <= 8; m++) {
-    for (let n = 1; n < m; n++) MODES.push([m, n]);
-}
-MODES.sort((a, b) => (a[0] ** 2 + a[1] ** 2) - (b[0] ** 2 + b[1] ** 2) || a[0] - b[0]);
-MODES.length = 16;
-MODES.forEach((mode, i) => mode.push(i % 2 === 0 ? 1 : -1));
+const LIGHT = { rest: 0.3, sustain: 0.28, kick: 1.4 };
 
-/** Where the plate sits on the mode list before any music arrives. */
-const IDLE_POSITION = 3;
+/** Seconds for the flash to arrive and to fade. */
+const FLASH_ATTACK = 0.008;
+const FLASH_RELEASE = 0.16;
+
+/** White added at the thick of the lines by a full kick. */
+const HEAT = 0.5;
+
+/** Bloom at rest, and what a full kick adds. */
+const BLOOM = { rest: 0.06, kick: 0.2 };
+
+/** Plate units per second a kick's wavefront travels, and how it weakens. */
+const RIPPLE_SPEED = 2.8;
+const RIPPLE_TAU = 0.45;
 
 /**
- * Attack and release, in seconds, for each slice's level before the balance
- * point is taken. Enough to stop single frames counting, no more: the real
- * smoothing is done once, on the balance point itself.
+ * How much smaller the lead's highest note draws the figure, and its lowest
+ * larger. A breath, not a zoom: a step in the melody moves it well under 1%.
  */
-const ATTACK = 0.1;
-const RELEASE = 0.5;
+const LEAD_ZOOM = 1.06;
+
+/** Seconds the sand takes to lift as a chord changes, and to settle after. */
+const LIFT_ATTACK = 0.02;
+const LIFT_RELEASE = 0.14;
 
 /**
- * Seconds the balance point takes to follow the music. This is the one knob
- * that trades steadiness against response. Music alternates its low and high
- * content within every beat (kick, hat, kick, hat); followed any faster, the
- * plate swings between a broad figure and a fine one on every beat and much
- * of the sand jumps lines each time, which reads as flicker rather than as
- * music. At this rate a hit nudges the figure and a sustained change of
- * balance — a breakdown, a drop, a new instrument — carries it somewhere new.
- */
-const BALANCE_TAU = 0.8;
-
-/**
- * How far the centroid is stretched from the middle of the mode list. The
- * per-band calibration keeps it within a few modes of the centre; this lets a
- * genuinely dark or bright passage reach the ends.
- */
-const BALANCE_GAIN = 3;
-
-/**
- * The spectral centroid range the Brightness input spans. The engine labels
- * material under 0.34 dark and over 0.58 bright; this reaches a little past
- * both so either end of the list is attainable.
- */
-const BRIGHTNESS_RANGE = [0.3, 0.65];
-
-/**
- * The pitch range, in MIDI notes, the Melody input spans across the mode list
- * — the same range the engine's pitch tracker searches for the lead. About two
- * semitones per figure, so a melody's steps are visible as steps.
- */
-const MELODY_RANGE = ANALYSIS.pitchLeadRange;
-
-/** Melody holds its figure while the tracker is less sure than this. */
-const PITCH_CONFIDENCE = 0.3;
-
-/** Below this the engine considers nothing to be playing, and Brightness holds. */
-const GATE = 0.35;
-
-/**
- * What can choose where the plate rings, in the order the Input dropdown
- * lists them; the first is what every visit starts on. Each `read` returns a
- * target position along the mode list (0..15), or null to hold where it is;
- * `tau` is how many seconds the plate takes to follow it.
- */
-const INPUTS = [
-    {
-        id: 'balance',
-        label: 'Balance',
-        description: 'which part of the spectrum stands out',
-        tau: BALANCE_TAU,
-        read: (plate, metrics, dt) => plate.readBalance(metrics.detail, dt)
-    },
-    {
-        id: 'melody',
-        label: 'Melody',
-        description: 'the lead note, G3 to C6',
-        // Fast enough that a melody's notes register as separate steps.
-        tau: 0.2,
-        read: (plate, metrics) => plate.readMelody(metrics)
-    },
-    {
-        id: 'brightness',
-        label: 'Brightness',
-        description: 'how dark or bright the mix is',
-        // The engine's centroid is already smoothed over 0.8s.
-        tau: 0.3,
-        read: (plate, metrics) => plate.readBrightness(metrics)
-    }
-];
-
-/**
- * Chladni mode: sand on a vibrating plate, gathered on the nodal lines.
+ * Chladni mode: sand with momentum on a plate shaped by chords.
  *
- * The plate is driven by the spectrum, the way a real one is. Each of its
- * sixteen modes is given a slice of the 72 detail bands, lowest mode to the
- * lowest slice, and the plate rings where the spectrum's weight currently
- * sits: the level-weighted balance point of the slices, as a position along
- * the mode list. The two modes either side of it are blended by
- * how close it is to each, and the sand settles on the lines of the blend.
+ * Each part of the music has one job and nothing else shares it:
+ *   kick      a flash of light, and a ripple that throws the sand outward
+ *   bass      the glow the flash rises from
+ *   chords    the shape, the sand lifting as it changes
+ *   lead      a slight breath in the size of the figure
+ *   key       the colour
  *
- * So deep material always means broad, simple figures and bright material
- * always means fine detail, the same sound always draws the same figure, and
- * as the balance shifts the lines slide, bend and split continuously into the
- * next figure. It is deliberately driven by one number averaged over every
- * band rather than by the individual bands' levels: those are noisy, and a
- * figure built from their differences jumps about with the noise.
+ * The shape is a sum of twelve standing waves, one per pitch class, weighted by
+ * what is sounding. The same chord always draws the same figure, chords that
+ * share notes draw figures that share features, and there is no list of figures
+ * to snap between. The sand is simulated rather than recomputed, so when the
+ * shape changes the grains travel to it.
  *
- * That balance point is the default input. `INPUTS` holds the alternatives —
- * the lead note from the engine's pitch tracker, and absolute brightness —
- * either of which can choose where the plate rings instead, picked from the
- * Input dropdown on the bar.
- *
- * Onsets jolt the plate, bass drives it harder, and noisy material (high
- * spectral flatness) scatters the sand off the lines altogether. The colour is
- * the detected key around the circle of fifths, fading back to bare sand when
- * no key stands out.
- *
- * The figure is tiled across the whole screen as a wallpaper of mirrored
- * plates, drawn in clip space so the camera, orbit controls and shake have
- * nothing to act on. The motion is computed per grain in the vertex shader from
- * closed-form mode shapes, so there are no simulation buffers — see
- * `chladni.vert.js`.
+ * Where in the spectrum the kick and the chords are is learned for each song, by
+ * `KickFinder` and `ChordRange`. The figure is drawn in clip space, so the camera,
+ * orbit controls and shake have nothing to act on, and bloom is driven by the
+ * kick from here rather than being set once by the registry.
  */
 export class Chladni extends VisualMode {
     constructor(stage) {
         super(stage);
-        this.camera = stage.camera;
+        this.renderer = stage.renderer;
+        this.brightness = 1;
 
-        /** Smoothed level of each mode's slice of the spectrum. */
-        this.strength = new Float32Array(MODES.length);
-        /** Where on the mode list the plate is ringing, 0..15, fractional. */
-        this.position = IDLE_POSITION;
-        /** What chooses that position. */
-        this.input = INPUTS[0];
-
-        this.target = { vibe: 0.1, beat: 0, scatter: 0, treble: 0 };
-        this.smooth = { vibe: 0.1, beat: 0, scatter: 0, treble: 0 };
+        this.chords = new ChordReader();
+        this.chordRange = new ChordRange();
+        this.lead = null;
+        this.target = { kick: 0, sustain: 0, lift: 0 };
+        this.smooth = { kick: 0, sustain: 0, lift: 0 };
+        this.ripples = Array.from({ length: 4 }, () => new THREE.Vector2(-10, 0));
+        this.nextRipple = 0;
         this.color = SAND.clone();
         this.targetColor = SAND.clone();
-        this.jitterTime = 0;
         this.audioThisFrame = false;
+        this.frame = 0;
 
-        this.material = this.createMaterial();
-        this.points = new THREE.Points(this.createGeometry(), this.material);
-        this.points.frustumCulled = false;
-        this.add(this.points);
-
-        this.writePosition();
+        this.buildTargets();
+        this.buildPasses();
     }
 
-    createGeometry() {
-        const home = new Float32Array(GRAINS * 3);
-        const rand = new Float32Array(GRAINS * 2);
-        for (let i = 0; i < GRAINS; i++) {
-            home[i * 3] = Math.random();
-            home[i * 3 + 1] = Math.random();
-            rand[i * 2] = Math.random();
-            rand[i * 2 + 1] = Math.random();
+    get wantsKick() {
+        return true;
+    }
+
+    buildTargets() {
+        // Full float for the grains: at half precision, 1080p is finer than the
+        // steps a position can take. Devices without it get a coarser plate.
+        const float = this.renderer.extensions.has('EXT_color_buffer_float');
+        const make = (width, height, type, filter) => new THREE.WebGLRenderTarget(width, height, {
+            type,
+            format: THREE.RGBAFormat,
+            minFilter: filter,
+            magFilter: filter,
+            depthBuffer: false,
+            stencilBuffer: false
+        });
+        const grain = float ? THREE.FloatType : THREE.HalfFloatType;
+        this.state = make(SIDE, SIDE, grain, THREE.NearestFilter);
+        this.nextState = make(SIDE, SIDE, grain, THREE.NearestFilter);
+        this.field = make(FIELD_SIZE, FIELD_SIZE, THREE.HalfFloatType, THREE.LinearFilter);
+        this.density = make(1, 1, THREE.HalfFloatType, THREE.NearestFilter);
+    }
+
+    buildPasses() {
+        this.passCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+        this.quad = new THREE.PlaneGeometry(2, 2);
+        const pass = (fragmentShader, uniforms) => {
+            const mesh = new THREE.Mesh(this.quad, new THREE.ShaderMaterial({
+                uniforms,
+                vertexShader: flareVertexShader,
+                fragmentShader,
+                depthTest: false,
+                depthWrite: false
+            }));
+            mesh.frustumCulled = false;
+            return mesh;
+        };
+        const alone = (object) => {
+            const scene = new THREE.Scene();
+            scene.add(object);
+            return scene;
+        };
+
+        this.extent = new THREE.Vector2(1, 1);
+        this.view = new THREE.Vector2(1, 1);
+
+        this.fieldMesh = pass(chladniFieldShader, {
+            uExtent: { value: this.extent },
+            uWaves: { value: WAVES.map((wave) => new THREE.Vector3(...wave)) },
+            uZoom: { value: 1 },
+            uWeights: { value: this.chords.weights }
+        });
+        this.fieldScene = alone(this.fieldMesh);
+
+        this.simMesh = pass(chladniSimShader, {
+            uState: { value: null },
+            uField: { value: this.field.texture },
+            uExtent: { value: this.extent },
+            uDt: { value: 0 },
+            uFrame: { value: 0 },
+            uReset: { value: true },
+            uStretch: { value: 1 },
+            uTremble: { value: 0 },
+            uLift: { value: 0 },
+            uRipples: { value: this.ripples }
+        });
+        this.simScene = alone(this.simMesh);
+
+        // Each point only needs to know which texel it is.
+        const ids = new Float32Array(SIDE * SIDE * 3);
+        for (let i = 0; i < SIDE * SIDE; i++) {
+            ids[i * 3] = i % SIDE;
+            ids[i * 3 + 1] = Math.floor(i / SIDE);
         }
         const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute('position', new THREE.BufferAttribute(home, 3));
-        geometry.setAttribute('aRand', new THREE.BufferAttribute(rand, 2));
-        return geometry;
-    }
-
-    createMaterial() {
-        return new THREE.ShaderMaterial({
+        geometry.setAttribute('position', new THREE.BufferAttribute(ids, 3));
+        this.grains = new THREE.Points(geometry, new THREE.ShaderMaterial({
             uniforms: {
-                uCells: { value: new THREE.Vector2(CELLS_SHORT, CELLS_SHORT) },
-                uVibe: { value: 0.1 },
-                uScatter: { value: 0 },
-                uBeat: { value: 0 },
-                uJitterTime: { value: 0 },
-                uModeA: { value: new THREE.Vector3() },
-                uModeB: { value: new THREE.Vector3() },
-                uMix: { value: 0 },
-                uColor: { value: SAND.clone() },
-                uBrightness: { value: 1 }
+                uState: { value: null },
+                uField: { value: this.field.texture },
+                uExtent: { value: this.extent },
+                uView: { value: this.view },
+                uSize: { value: 1 },
+                uGrain: { value: 0.1 }
             },
-            vertexShader: chladniVertexShader,
-            fragmentShader: chladniFragmentShader,
+            vertexShader: chladniGrainVertexShader,
+            fragmentShader: chladniGrainFragmentShader,
             transparent: true,
             depthTest: false,
             depthWrite: false,
-            blending: THREE.AdditiveBlending
-        });
+            blending: THREE.CustomBlending,
+            blendSrc: THREE.OneFactor,
+            blendDst: THREE.OneFactor
+        }));
+        this.grains.frustumCulled = false;
+        this.grainScene = alone(this.grains);
+
+        this.display = this.add(pass(chladniDisplayShader, {
+            uDensity: { value: this.density.texture },
+            uColor: { value: this.color },
+            uLight: { value: LIGHT.rest },
+            uHeat: { value: 0 }
+        }));
     }
 
     setBrightness(value) {
-        this.material.uniforms.uBrightness.value = value;
+        this.brightness = value;
     }
 
-    setAudio(metrics, dt) {
+    setAudio(metrics, dt, { kick, dataArray, analyser, audioContext }) {
         this.audioThisFrame = true;
-        const { bass, treble, beat, flatness } = metrics;
-
-        this.target.vibe = 0.1 + bass * 0.9;
-        this.target.beat = beat;
-        this.target.treble = treble;
-        // Tonal material sits well under 0.45; drums, distortion and noise rise
-        // toward 1. Only the top of that range should lift the sand off.
-        this.target.scatter = smoothstep(0.45, 0.85, flatness);
-
-        const target = this.input.read(this, metrics, dt);
-        if (target !== null) {
-            // Clamped before smoothing, so an extreme reading parks the plate
-            // at the end of the list rather than winding up past it and taking
-            // seconds to come back.
-            const clamped = Math.min(MODES.length - 1, Math.max(0, target));
-            this.position = ema(this.position, clamped, dt, this.input.tau);
+        // Built to the stream's own rate, so again if the source changes to another.
+        if (this.lead?.sampleRate !== audioContext.sampleRate) {
+            this.lead = new LeadReader(analyser.fftSize, audioContext.sampleRate);
         }
-        this.writePosition();
-        this.readKey(metrics);
-    }
+        this.lead.update(dataArray, metrics.gate, dt);
+        this.chordRange.update(metrics.chroma, metrics.gate, dt);
+        this.chords.update(this.chordRange.raw, metrics.gate, dt, this.lead);
+        this.target.lift = this.chords.change * smoothstep(0.2, 0.6, this.chords.distance);
 
-    /** The inputs this mode offers, for the control panel. */
-    get inputs() {
-        return INPUTS.map(({ id, label, description }) => ({ id, label, description }));
-    }
+        // The detector calibrates itself, so only the controls a person sets
+        // scale it. Auto-gain would be correcting it twice.
+        const gain = CONFIG.trim * (CONFIG.autoSensitivity ? 1 : metrics.gain) * metrics.gate;
+        this.target.kick = clamp((kick?.kick ?? 0) * gain, 0, 1.2);
+        this.target.sustain = clamp((kick?.sustain ?? 0) * gain, 0, 1.2);
+        if (kick?.fired) this.launchRipple(clamp(gain, 0, 1.2));
 
-    get inputId() {
-        return this.input.id;
-    }
-
-    /**
-     * Choose what drives the plate. An unknown id is ignored, since it may
-     * come from storage written by an older version. The plate eases from
-     * where it is to wherever the new input points, so switching never jumps.
-     */
-    setInput(id) {
-        const input = INPUTS.find((candidate) => candidate.id === id);
-        if (input) this.input = input;
-        return this.input;
-    }
-
-    /**
-     * The absolute spectral centroid. Unlike Balance it is not calibrated per
-     * band, so it is comparable between songs: a dark track sits low on the
-     * list for its whole length and a bright one high.
-     */
-    readBrightness(metrics) {
-        if (metrics.gate < GATE) return null;
-        const [lo, hi] = BRIGHTNESS_RANGE;
-        return ((metrics.tilt - lo) / (hi - lo)) * (MODES.length - 1);
-    }
-
-    /**
-     * The lead note from the engine's pitch tracker, as a position on the
-     * list: a rising line climbs through the figures. Holds while the tracker
-     * is unsure, so the plate stays on the last note through drum fills and
-     * rests instead of wandering.
-     */
-    readMelody(metrics) {
-        return this.readPitch(metrics.pitch.lead, MELODY_RANGE);
-    }
-
-    readPitch(register, [loNote, hiNote]) {
-        if (register.confidence < PITCH_CONFIDENCE) return null;
-        return ((register.note - loNote) / (hiNote - loNote)) * (MODES.length - 1);
-    }
-
-    /**
-     * Find where the spectrum's weight sits along the mode list.
-     *
-     * A plain level-weighted centroid, which is linear in every band and so
-     * moves smoothly and in proportion as the balance shifts. Anything that
-     * picks out the slices standing out above the rest — thresholding them,
-     * or squaring their excess — turns it into a contest the kick and the hats
-     * win in turn on every beat, and the figure swings end to end with them.
-     *
-     * The bands are calibrated per band, so over time every slice averages out
-     * at about the same level and the raw centroid stays near the middle of
-     * the list. `BALANCE_GAIN` stretches it back out to reach both ends. With
-     * nothing playing the plate holds where it is.
-     */
-    readBalance(detail, dt) {
-        const per = detail.length / MODES.length;
-        let moment = 0;
-        let weight = 0;
-        for (let i = 0; i < MODES.length; i++) {
-            const lo = Math.floor(i * per);
-            const hi = Math.max(lo + 1, Math.floor((i + 1) * per));
-            let sum = 0;
-            for (let b = lo; b < hi; b++) sum += detail[b];
-            this.strength[i] = envelope(this.strength[i], sum / (hi - lo), dt, ATTACK, RELEASE);
-            moment += this.strength[i] * i;
-            weight += this.strength[i];
-        }
-        if (weight < 1e-3) return null;
-        const middle = (MODES.length - 1) / 2;
-        return middle + (moment / weight - middle) * BALANCE_GAIN;
-    }
-
-    /** The two modes either side of the balance point, and the blend between them. */
-    writePosition() {
-        const u = this.material.uniforms;
-        const base = Math.min(MODES.length - 2, Math.max(0, Math.floor(this.position)));
-        const mix = Math.min(1, Math.max(0, this.position - base));
-        u.uModeA.value.set(...MODES[base]);
-        u.uModeB.value.set(...MODES[base + 1]);
-        u.uMix.value = mix;
-    }
-
-    /** Colour from the key: the circle of fifths around the hue wheel. */
-    readKey(metrics) {
         const { tonic, isMinor, tonality } = metrics.chroma;
         const hue = ((tonic * 7) % 12) / 12;
         const keyColor = new THREE.Color().setHSL(hue, 0.8, isMinor ? 0.5 : 0.62);
         this.targetColor.copy(SAND).lerp(keyColor, smoothstep(0.15, 0.6, tonality) * 0.85);
     }
 
-    /** Plates across and down, keeping them square at any aspect ratio. */
-    fitCells(cells) {
-        const aspect = this.camera.aspect;
-        if (aspect >= 1) cells.set(CELLS_SHORT * aspect, CELLS_SHORT);
-        else cells.set(CELLS_SHORT, CELLS_SHORT / aspect);
+    /** Send a wavefront out from the centre, replacing the oldest one. */
+    launchRipple(strength) {
+        this.ripples[this.nextRipple].set(0, strength);
+        this.nextRipple = (this.nextRipple + 1) % this.ripples.length;
     }
 
     setTime(time, dt) {
         if (!this.audioThisFrame) {
-            Object.assign(this.target, { vibe: 0.1, beat: 0, scatter: 0, treble: 0 });
+            this.target.kick = this.target.sustain = this.target.lift = 0;
             this.targetColor.copy(SAND);
         }
         this.audioThisFrame = false;
 
         const s = this.smooth;
-        const t = this.target;
-        s.vibe = envelope(s.vibe, t.vibe, dt, 0.02, 0.25);
-        s.beat = envelope(s.beat, t.beat, dt, 0.008, 0.18);
-        s.scatter = envelope(s.scatter, t.scatter, dt, 0.15, 0.6);
-        s.treble = envelope(s.treble, t.treble, dt, 0.03, 0.2);
+        s.kick = envelope(s.kick, this.target.kick, dt, FLASH_ATTACK, FLASH_RELEASE);
+        s.sustain = ema(s.sustain, this.target.sustain, dt, 0.06);
+        s.lift = envelope(s.lift, this.target.lift, dt, LIFT_ATTACK, LIFT_RELEASE);
+        this.color.lerp(this.targetColor, 1 - Math.exp(-dt / 1.5));
 
-        const k = 1 - Math.exp(-dt / 1.5);
-        this.color.lerp(this.targetColor, k);
+        for (const ripple of this.ripples) {
+            ripple.x += RIPPLE_SPEED * dt;
+            ripple.y *= Math.exp(-dt / RIPPLE_TAU);
+        }
 
-        // Integrated rather than scaled, so a change in rate never makes the
-        // grains jump: treble makes the sand chatter faster.
-        this.jitterTime += dt * (1.5 + s.treble * 6 + s.vibe * 2);
+        const u = this.display.material.uniforms;
+        u.uLight.value = this.brightness
+            * (LIGHT.rest + s.sustain * LIGHT.sustain + s.kick * LIGHT.kick);
+        u.uHeat.value = this.brightness * s.kick * s.kick * HEAT;
+        this.stage.setBloomScale(BLOOM.rest + s.kick * BLOOM.kick);
 
-        const u = this.material.uniforms;
-        this.fitCells(u.uCells.value);
-        u.uVibe.value = s.vibe;
-        u.uBeat.value = s.beat;
-        u.uScatter.value = s.scatter;
-        u.uJitterTime.value = this.jitterTime;
-        u.uColor.value.copy(this.color);
+        this.fit();
+        this.step(Math.min(dt, 1 / 30));
+    }
+
+    /** Match the plate and the density target to the screen. */
+    fit() {
+        const size = this.renderer.getDrawingBufferSize(new THREE.Vector2());
+        const shorter = Math.max(1, Math.min(size.x, size.y));
+        this.view.set(size.x / shorter, size.y / shorter);
+        this.extent.copy(this.view).multiplyScalar(OVERSCAN);
+
+        if (this.density.width !== size.x || this.density.height !== size.y) {
+            this.density.setSize(Math.max(1, size.x), Math.max(1, size.y));
+        }
+        // Keeps the same sand equally solid whatever the resolution: the points
+        // grow with the screen, and each counts for less once they overlap more.
+        const u = this.grains.material.uniforms;
+        const scale = shorter / 1080;
+        const point = Math.max(1, 1.4 * scale);
+        u.uSize.value = point;
+        u.uGrain.value = 0.17 * (1.4 * scale / point) ** 2;
+    }
+
+    step(dt) {
+        const renderer = this.renderer;
+        const previous = renderer.getRenderTarget();
+        const draw = (scene, target) => {
+            renderer.setRenderTarget(target);
+            renderer.render(scene, this.passCamera);
+        };
+
+        const zoom = this.fieldMesh.material.uniforms.uZoom;
+        const before = zoom.value;
+        zoom.value = LEAD_ZOOM ** (this.lead?.height ?? 0);
+        this.simMesh.material.uniforms.uStretch.value = before / zoom.value;
+        draw(this.fieldScene, this.field);
+
+        const sim = this.simMesh.material.uniforms;
+        sim.uState.value = this.state.texture;
+        sim.uDt.value = dt;
+        sim.uFrame.value = this.frame;
+        sim.uReset.value = this.frame === 0;
+        sim.uTremble.value = 0.1 + this.smooth.sustain * 0.12;
+        sim.uLift.value = this.smooth.lift;
+        draw(this.simScene, this.nextState);
+        [this.state, this.nextState] = [this.nextState, this.state];
+        this.frame++;
+
+        this.grains.material.uniforms.uState.value = this.state.texture;
+        draw(this.grainScene, this.density);
+
+        renderer.setRenderTarget(previous);
+    }
+
+    dispose() {
+        super.dispose();
+        for (const target of [this.state, this.nextState, this.field, this.density]) {
+            target.dispose();
+        }
+        this.quad.dispose();
+        this.fieldMesh.material.dispose();
+        this.simMesh.material.dispose();
+        this.grains.geometry.dispose();
+        this.grains.material.dispose();
     }
 }

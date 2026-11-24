@@ -73,6 +73,7 @@ export class Chroma {
         const loHz = 440 * Math.pow(2, (loNote - 69) / 12);
         const hiHz = 440 * Math.pow(2, (hiNote - 69) / 12);
 
+        this.binHz = binHz;
         this.binLo = Math.max(1, Math.floor(loHz / binHz));
         this.binHi = Math.min(binCount, Math.ceil(hiHz / binHz) + 1);
         this.salience = new Float32Array(this.binHi - this.binLo);

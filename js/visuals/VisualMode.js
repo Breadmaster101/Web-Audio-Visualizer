@@ -30,6 +30,11 @@ export class VisualMode {
         return object;
     }
 
+    /** Whether the mode needs the kick detector running. */
+    get wantsKick() {
+        return false;
+    }
+
     /**
      * One frame of audio. Called only while a stream is connected, so a mode
      * never has to handle undefined metrics — it simply stops being called and
@@ -37,8 +42,10 @@ export class VisualMode {
      *
      * @param {object} metrics  The analyser's live output.
      * @param {number} dt       Frame delta in seconds, already clamped upstream.
+     * @param {object} audio    The AudioSource: the raw FFT frame and, if
+     *                          `wantsKick`, the kick detector.
      */
-    setAudio(metrics, dt) {}
+    setAudio(metrics, dt, audio) {}
 
     /**
      * Advance anything that moves on its own. Called every frame, including

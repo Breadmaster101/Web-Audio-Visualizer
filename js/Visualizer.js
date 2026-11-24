@@ -72,8 +72,9 @@ export class Visualizer {
         const deltaTime = this.clock.getDelta();
         const time = this.clock.getElapsedTime();
 
+        this.audio.setKickTap(this.mode.wantsKick);
         if (this.audio.update(deltaTime)) {
-            this.mode.setAudio(this.audio.metrics, deltaTime);
+            this.mode.setAudio(this.audio.metrics, deltaTime, this.audio);
             this.shake.apply(this.audio.metrics, deltaTime);
         }
 

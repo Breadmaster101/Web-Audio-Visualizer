@@ -9,7 +9,28 @@ Three visualisers, driven by one analysis engine:
 |---|---|---|
 | **Sphere** | the spectrum, now | A million points displaced by four audio-driven fields. No memory: every frame is drawn from that frame's audio. |
 | **Flare** | a point of light, stared at | A blown-out core, corona, Airy rings, a squint bar and chromatic diffraction needles. Bass swells the core, treble crackles the rays, every onset flashes it. Instant attack, slow after-image release. |
-| **Chladni** | the timbre, settling | Sand on vibrating plates, gathered on their nodal lines and tiled edge to edge across the screen as a mirrored wallpaper. Sixteen plate modes are laid out low to high across the spectrum, the way a real plate's are, and the plate rings at the spectrum's balance point, blending the two modes either side of it. Dark passages draw broad, simple figures and bright ones fine detail, the same sound always draws the same figure, and the lines slide and split continuously as the balance shifts. The balance point is followed over most of a second, so each beat's kick and hat nudge the figure rather than flipping it. The Input dropdown on the bar swaps what drives the plate: **Balance** (where every visit starts), **Melody** (the lead note from the engine's pitch tracker, G3 to C6, so a tune climbs and falls through the figures) or **Brightness** (the absolute spectral centroid, comparable between songs). Onsets jolt the plate, bass drives it harder, noisy material scatters the sand, the key colours it. |
+| **Chladni** | the harmony, settling | A million grains of sand with momentum on a vibrating plate, gathered on its nodal lines. Chords shape the plate, the kick lights it and throws the sand. See below. |
+
+### Chladni
+
+Gives each part of the music one job, so you can tell what the plate is reacting
+to:
+
+| You hear | You see |
+| --- | --- |
+| Kick | A flash of light, and a ripple that throws the sand outward |
+| Sustained bass | The glow the flash rises from |
+| Chords | The shape; the sand lifts briefly as it changes |
+| Lead note | A slight breath in the size of the figure |
+| Key | The colour |
+
+The shape is a sum of twelve standing waves, one per pitch class, weighted by
+what is sounding, so the same chord always draws the same figure and there is no
+list of figures to snap between. The sand is simulated on the GPU with momentum,
+so when the chord changes the grains travel to the new lines. The kick is heard
+by its own low-frequency detector, which is attached to the stream only while
+Chladni is on screen. Where the kick and the chords sit in the spectrum is
+learned for each song over its first several seconds, and forgotten after a gap.
 
 ## Running
 
@@ -43,6 +64,11 @@ js/
     TempoTracker.js     Autocorrelation tempo estimate + phase-locked beat grid
     Chroma.js           Pitch classes from spectral salience + key estimation
     Pitch.js            Bass and lead notes by harmonic summation
+    KickDetector.js     Chladni: low-latency kick and sustained bass
+    KickFinder.js       Chladni: which low range holds the kick
+    ChordRange.js       Chladni: which octaves hold the chords
+    ChordReader.js      Chladni: which notes sound together
+    LeadReader.js       Chladni: the lead note, steadied
     dsp.js              Shared helpers (time-constant smoothing, limiter, curves)
   visuals/
     Stage.js            Scene, camera, renderer, orbit controls, bloom
@@ -50,7 +76,7 @@ js/
     modes.js            The registry: one row per visualiser
     ParticleSystem.js   Sphere mode: point cloud + shader material
     Flare.js            Flare mode: half-res HDR light pass + full-res tonemap
-    Chladni.js          Chladni mode: spectrum -> mode mix, tiled sand points
+    Chladni.js          Chladni mode: simulated sand on a plate shaped by chords
     CameraShake.js      Beat-driven camera jitter (shared)
   shaders/
     particles.vert.js   Sphere vertex shader (audio-driven displacement)
@@ -58,8 +84,9 @@ js/
     flare.vert.js       Clip-space quad shared by both flare passes
     flare.frag.js       Flare light pass (core, halo, rings, streak, needles)
     flare.tonemap.js    Flare display pass (upsample, ACES, dither)
-    chladni.vert.js     Chladni grains (Newton projection onto nodal lines)
-    chladni.frag.js     Chladni fragment shader (round sand grains)
+    chladni.field.js    Chladni: the plate's height from twelve pitch classes
+    chladni.sim.js      Chladni: one step of every grain
+    chladni.grains.js   Chladni: sand coverage, and lighting it
     noise.glsl.js       Reusable 3D simplex noise chunk
   ui/
     StartOverlay.js     Source-picker screen
@@ -75,8 +102,6 @@ One bar floating above the bottom edge, on a blurred translucent background.
 It holds everything you can change or read:
 
 - **Sphere / Flare / Chladni** picks the visualiser.
-- **Input** appears only for Chladni, and picks what drives the plate:
-  Balance, Melody or Brightness. It starts on Balance every time.
 - **System / Mic** picks the audio source.
 - **Tempo** shows the detected BPM, or *Searching* until the tracker is sure.
 - **Sens** shows the sensitivity the engine has settled on. **Auto** switches

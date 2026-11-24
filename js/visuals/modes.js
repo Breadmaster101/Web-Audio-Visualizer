@@ -12,8 +12,8 @@ import { Chladni } from './Chladni.js';
  *
  * `brightness` is fixed per mode rather than shared, because it means very
  * different things per mode: the sphere is a million additive points, the
- * flare a tonemapped light whose tuned exposure is 0.8, and the plate's sand
- * piles hundreds of thousands of additive grains onto a few thin lines.
+ * flare a tonemapped light whose tuned exposure is 0.8, and the plate's sand is
+ * already lit to its own scale, so 1 leaves it as tuned.
  *
  * `view.autoRotate` is the mode's permission to auto-rotate. `view.bloomScale`
  * is the mode's own exposure, multiplied into `CONFIG.bloomStrength`, since a
@@ -40,12 +40,11 @@ export const MODES = [
     {
         id: 'chladni',
         label: 'Chladni',
-        brightness: 0.12,
-        // A wallpaper of plates drawn in clip space, so the camera is a
-        // formality and auto-rotate would have nothing to turn. The grains pile
-        // up on lines that now cover the whole screen, so past about 0.2 the
-        // bloom washes over the dark between them.
-        view: { position: [0, 0, 8], target: [0, 0, 0], autoRotate: false, bloomScale: 0.18 },
+        brightness: 1,
+        // Drawn in clip space, so the camera is a formality and auto-rotate
+        // would have nothing to turn. The bloom is only where it starts: the
+        // mode drives it from the kick.
+        view: { position: [0, 0, 8], target: [0, 0, 0], autoRotate: false, bloomScale: 0.06 },
         create: (stage) => new Chladni(stage)
     }
 ];
