@@ -14,27 +14,45 @@ const HIGHPASS_HZ = 28;
  */
 const WINDOW_SECONDS = 0.021;
 
-/** How far back, in seconds, a rise in level is measured from. */
-const RISE_SECONDS = 0.09;
+/**
+ * Seconds between level readings, and of signal kept to take them from. Several
+ * readings per frame, so a slow frame does not step over the dip between two
+ * quick hits.
+ */
+const HOP_SECONDS = 0.005;
+const BUFFER_SECONDS = 0.085;
+
+/**
+ * How far back, in seconds, a rise in level is measured from. Also about how
+ * long a hit reads as one, so it has to be shorter than the gap between two.
+ */
+const RISE_SECONDS = 0.04;
+
+/** Readings back that a level still climbing is above. */
+const CLIMB_READINGS = 3;
 
 /** Nothing below this is music. */
 const SILENCE_DB = -75;
 
 /** The loudest recent low end is forgotten at this rate, in dB per second. */
-const CEIL_FALL = 0.8;
+const CEIL_FALL = 2;
+
+/** How far under that, in dB, a hit counts for nothing and for everything. */
+const NEAR = [-20, -10];
 
 /**
  * Bounds on the rise, in dB, a full-strength hit is expected to make. A kick on
- * its own climbs out of silence; one over a held bassline only adds a few dB,
- * so the expectation follows what the track actually does, between these.
+ * its own climbs out of silence; one over a held bassline, or over the tail of
+ * the kick before, only adds a few dB. The expectation follows the track, but
+ * not far: one clean hit must not raise the bar past the crowded ones after it.
  */
-const RISE_RANGE = [5, 12];
+const RISE_RANGE = [7, 9];
 const RISE_FORGET_TAU = 6;
 
 /** Re-arm and fire levels, and the shortest gap, for counting separate hits. */
 const FIRE = 0.5;
-const REARM = 0.2;
-const MIN_GAP = 0.14;
+const REARM = 0.3;
+const MIN_GAP = 0.09;
 
 /**
  * Hears the kick, and the sustained bass under it, separately.
@@ -44,7 +62,7 @@ const MIN_GAP = 0.14;
  * low end there is but cannot tell a kick from a held note. And both read a
  * 4096-point FFT, whose window is 85ms long. This is a separate tap: the
  * stream through its own low-pass filters into a short time-domain buffer, read
- * as a level every frame.
+ * as a level several times a frame.
  *
  * The kick is how sharply that level has *risen*, so a bassline held at any
  * volume leaves it at zero, and how close it has come to the loudest recent low
@@ -60,6 +78,7 @@ export class KickDetector {
      * @param {number} highHz
      */
     constructor(context, source, lowHz = HIGHPASS_HZ, highHz = LOWPASS_HZ) {
+        this.context = context;
         this.source = source;
         this.range = [lowHz, highHz];
 
@@ -80,9 +99,13 @@ export class KickDetector {
         ];
 
         this.tap = context.createAnalyser();
-        const wanted = WINDOW_SECONDS * context.sampleRate;
-        this.tap.fftSize = 2 ** Math.round(Math.log2(wanted));
+        const powerOfTwo = (seconds) => 2 ** Math.round(Math.log2(seconds * context.sampleRate));
+        this.window = powerOfTwo(WINDOW_SECONDS);
+        this.tap.fftSize = powerOfTwo(BUFFER_SECONDS);
         this.samples = new Float32Array(this.tap.fftSize);
+        this.hop = Math.round(HOP_SECONDS * context.sampleRate);
+        /** Context time up to which readings have been taken. */
+        this.readTo = context.currentTime;
 
         let node = source;
         for (const next of [...this.nodes, this.tap]) {
@@ -91,6 +114,7 @@ export class KickDetector {
         }
 
         this.db = SILENCE_DB;
+        this.recent = [];           // the last few readings, newest last
         this.history = [];          // [seconds ago, dB], newest last
         this.ceil = SILENCE_DB + 15;
         this.riseRef = RISE_RANGE[1];
@@ -105,11 +129,37 @@ export class KickDetector {
         this.fired = false;
     }
 
-    update(dt) {
-        this.tap.getFloatTimeDomainData(this.samples);
-        let sum = 0;
-        for (const v of this.samples) sum += v * v;
-        this.push(linToDb(Math.sqrt(sum / this.samples.length)), dt);
+    /** Take every reading due since the last call; `kick` is the hardest. */
+    update() {
+        const { samples, window, hop } = this;
+        const { sampleRate, currentTime } = this.context;
+
+        this.fired = false;
+        const due = Math.floor(Math.round((currentTime - this.readTo) * sampleRate) / hop);
+        if (due < 1) return;
+
+        // A stall longer than the buffer loses what fell out of it.
+        const kept = Math.floor((samples.length - window) / hop);
+        const count = Math.min(due, kept);
+        // The newest sample a reading is due for, short of the buffer's end by
+        // whatever part of a hop is left over for next time.
+        this.readTo += due * hop / sampleRate;
+        const spare = clamp(Math.round((currentTime - this.readTo) * sampleRate), 0, hop);
+
+        this.tap.getFloatTimeDomainData(samples);
+        let kick = 0;
+        let fired = false;
+        for (let i = count - 1; i >= 0; i--) {
+            const end = Math.max(window, samples.length - spare - i * hop);
+            let sum = 0;
+            for (let j = end - window; j < end; j++) sum += samples[j] * samples[j];
+            const skipped = i === count - 1 ? due - count : 0;
+            this.push(linToDb(Math.sqrt(sum / window)), (1 + skipped) * hop / sampleRate);
+            kick = Math.max(kick, this.kick);
+            fired ||= this.fired;
+        }
+        this.kick = kick;
+        this.fired = fired;
     }
 
     /** One level reading, in dB. Separate from `update` so it can be tested. */
@@ -127,15 +177,21 @@ export class KickDetector {
         this.history.push([0, db]);
         while (this.history[0][0] > RISE_SECONDS) this.history.shift();
 
+        // Only while it is still climbing: a hit is over once it peaks, and the
+        // light has to start falling there for the next one to lift it again.
+        const climbing = smoothstep(0, 1.5, db - (this.recent[0] ?? db));
+        this.recent.push(db);
+        if (this.recent.length > CLIMB_READINGS) this.recent.shift();
+
         // Measured from no further down than 18dB under the ceiling, so the
         // depth of the silence before a hit does not decide how big it is.
         const rise = Math.max(0, db - Math.max(floor, this.ceil - 18));
-        const near = smoothstep(-13, -4, db - this.ceil);
+        const near = smoothstep(...NEAR, db - this.ceil);
         if (near > 0.5 && rise > this.riseRef) this.riseRef = Math.min(rise, RISE_RANGE[1]);
         this.riseRef = Math.max(RISE_RANGE[0], ema(this.riseRef, RISE_RANGE[0], dt, RISE_FORGET_TAU));
 
         const audible = smoothstep(SILENCE_DB, SILENCE_DB + 10, db);
-        this.kick = smoothstep(0.45, 0.9, rise / this.riseRef) * near * audible;
+        this.kick = smoothstep(0.45, 0.9, rise / this.riseRef) * climbing * near * audible;
 
         this.fired = this.armed && this.kick > FIRE && this.sinceHit > MIN_GAP;
         if (this.fired) {

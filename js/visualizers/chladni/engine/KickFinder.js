@@ -14,6 +14,21 @@ const CLEARLY = 1.8;
 /** Gap, in dB, beyond which a range is clean enough and more earns nothing. */
 const CLEAN_GAP = 16;
 
+/**
+ * How far under the fixed range, in dB, another range's level leaves its hits
+ * counting in full, and for nothing.
+ */
+const OTHER_LEVEL = [5, 12];
+
+/** Seconds within which two ranges' hits are the same one. */
+const SAME_HIT = 0.075;
+
+/** Seconds after a hit over which the rest of it stops counting. */
+const HIT_OVER = [0.02, 0.05];
+
+/** A range reaching above this, in Hz, hears snares too. */
+const SNARE_HZ = 120;
+
 /** Hits per second: too few to be the kick, and as many as a bassline plays. */
 const RATE_FEW = 0.4;
 const RATE_MANY = [2.6, 4.2];
@@ -46,6 +61,11 @@ const GAP_SECONDS = 1.5;
  *
  * Every range has its own running detector, so changing between them takes effect
  * at once with nothing to settle.
+ *
+ * What is learned is which range to trust most, not the only one to listen to.
+ * A bass note, or a kick over one, can land outside it, and one that comes as
+ * another note ends leaves the overall level where it was. So a hit in any other
+ * range counts too, as far as that range carries the low end at the time.
  */
 export class KickFinder {
     constructor(context, source) {
@@ -56,6 +76,11 @@ export class KickFinder {
 
     reset() {
         this.learned = this.fixed;
+        /** How hard a kick is landing this instant, 0..1. */
+        this.kick = 0;
+        /** True for exactly the frame a clear hit lands on. */
+        this.fired = false;
+        this.sinceHit = 1;
         this.heard = 0;
         this.quiet = 0;
         this.leader = null;
@@ -68,13 +93,6 @@ export class KickFinder {
         }
     }
 
-    get kick() {
-        return this.learned.kick;
-    }
-
-    get fired() {
-        return this.learned.fired;
-    }
 
     /** Always the fixed range's: where the kick is says nothing of the bass. */
     get sustain() {
@@ -83,7 +101,8 @@ export class KickFinder {
 
     /** @param {number} gate  0..1, whether anything is playing. */
     update(dt, gate) {
-        for (const ear of this.ears) ear.update(dt);
+        for (const ear of this.ears) ear.update();
+        this.listen(dt);
 
         if (gate < 0.2) {
             this.quiet += dt;
@@ -92,6 +111,32 @@ export class KickFinder {
         }
         this.quiet = 0;
         if (gate > 0.5) this.learn(dt);
+    }
+
+    listen(dt) {
+        this.kick = 0;
+        this.sinceHit += dt;
+        let hit = false;
+        for (const ear of this.ears) {
+            const weight = this.weigh(ear);
+            this.kick = Math.max(this.kick, ear.kick * weight);
+            hit ||= ear.fired && weight > 0.5;
+        }
+        // The same hit reaches each range at a slightly different moment.
+        this.fired = hit && this.sinceHit > SAME_HIT;
+        if (this.fired) this.sinceHit = 0;
+        // The lowest ranges are still climbing well after the hit. Left in, they
+        // hold the light up until the next one, which then has nothing to add.
+        else if (this.sinceHit < SAME_HIT) {
+            this.kick *= 1 - smoothstep(...HIT_OVER, this.sinceHit);
+        }
+    }
+
+    /** How far to trust a range's hits, 0..1. */
+    weigh(ear) {
+        if (ear === this.learned) return 1;
+        if (ear.range[1] > SNARE_HZ) return 0;
+        return 1 - smoothstep(...OTHER_LEVEL, this.fixed.db - ear.db);
     }
 
     learn(dt) {

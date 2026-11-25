@@ -56,7 +56,7 @@ const LIGHT = { rest: 0.3, sustain: 0.28, kick: 1.4 };
 
 /** Seconds for the flash to arrive and to fade. */
 const FLASH_ATTACK = 0.008;
-const FLASH_RELEASE = 0.16;
+const FLASH_RELEASE = 0.12;
 
 /** White added at the thick of the lines by a full kick. */
 const HEAT = 0.5;
